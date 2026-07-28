@@ -4,6 +4,43 @@
 
 设计目标是让 AI 负责整理资料、补全结构、生图、审图、重试、版本管理和文件校验，只把真正会改变角色身份或传播方向的选择交给用户。
 
+## 效果展示
+
+下面的“灯灯”由 IP Studio 从角色档案和单张主参考图持续驱动。角色的双耳、额毛、墨蓝斗篷、月牙扣、狐尾与独立悬挂灯笼保持不变，动作和信息结构则随传播任务改变。
+
+<p align="center">
+  <img src="docs/images/lantern-fox-banner.webp" alt="灯笼狐个人主页横幅" width="100%">
+</p>
+<p align="center"><sub>个人主页横幅：角色亲自用灯笼把复杂问题照亮。</sub></p>
+
+<table>
+  <tr>
+    <td align="center" width="36%">
+      <img src="docs/images/lantern-fox-master.webp" alt="灯笼狐正式主参考图"><br>
+      <sub>正式主参考图：角色档案登记的唯一默认视觉参考。</sub>
+    </td>
+    <td align="center" width="64%">
+      <img src="docs/images/lantern-fox-cover.webp" alt="灯笼狐文章封面"><br>
+      <sub>文章封面：同一 IP 贯穿封面、说明图和正文插图。</sub>
+    </td>
+  </tr>
+</table>
+
+<p align="center">
+  <img src="docs/images/lantern-fox-explainer.webp" alt="同一 IP 驱动三类内容视觉的说明图" width="620">
+</p>
+<p align="center"><sub>说明图：角色不是站在旁边讲解，而是直接承担信息流程中的关键动作。</sub></p>
+
+<p align="center">
+  <img src="docs/images/lantern-fox-illustration.webp" alt="身份先锁定、场景再变化的正文插图" width="100%">
+</p>
+<p align="center"><sub>正文插图：固定角色身份，把动作、场景和氛围作为当次变量。</sub></p>
+
+<p align="center">
+  <img src="docs/images/lantern-fox-pet-idle.gif" alt="灯笼狐 Codex 桌宠待机动画" width="192"><br>
+  <sub>Codex v2 桌宠：九组应用状态、十六个注视方向和透明边缘检查。</sub>
+</p>
+
 ## 主要能力
 
 - 从零设计、导入或修改风格化人形、动物、拟人、物件和幻想生物。
