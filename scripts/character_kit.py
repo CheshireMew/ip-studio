@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import copy
+import datetime as dt
 import hashlib
 import json
 import os
@@ -17,6 +18,8 @@ from typing import Any
 
 
 SCHEMA_VERSION = "2.0"
+CALIBRATION_SCHEMA_VERSION = "1.0"
+CALIBRATION_KINDS = {"turnaround", "action", "hands", "accessory"}
 CHARACTER_ID_RE = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$")
 REFERENCE_ID_RE = re.compile(r"^[a-z][a-z0-9-]{0,31}$")
 HEX_COLOR_RE = re.compile(r"^#[0-9A-Fa-f]{6}$")
@@ -2226,6 +2229,7 @@ def _check_kit(kit: Path) -> dict[str, Any]:
             raise ProfileError(f"history guide revision mismatch: {guide_path}")
         history.append(label)
 
+    calibrations = _check_calibrations(kit, current)
     return {
         "status": "PASS",
         "kit": str(kit.resolve()),
@@ -2238,7 +2242,128 @@ def _check_kit(kit: Path) -> dict[str, Any]:
             ).resolve()
         ),
         "history": history,
+        "calibrations": calibrations,
     }
+
+
+def _profile_for_revision(kit: Path, revision: str) -> dict[str, Any]:
+    if not re.fullmatch(r"r\d{3,}", revision) or int(revision[1:]) < 1:
+        raise ProfileError(f"invalid character revision label: {revision}")
+    current = _read_current_profile(kit)
+    if current is None:
+        raise ProfileError("character-profile.json is missing")
+    if f"r{current['revision']:03d}" == revision:
+        return current
+    path = kit / "history" / revision / "character-profile.json"
+    if not path.is_file():
+        raise ProfileError(f"character revision does not exist: {revision}")
+    return _validate_locked_profile(_load_json(path))
+
+
+def _safe_calibration_file(folder: Path, relative: Any, label: str) -> Path:
+    if not isinstance(relative, str) or not relative.strip():
+        raise ProfileError(f"{label} must be a non-empty relative path")
+    candidate = Path(relative)
+    if candidate.is_absolute() or ".." in candidate.parts:
+        raise ProfileError(f"{label} must stay inside {folder}")
+    resolved = (folder / candidate).resolve()
+    try:
+        resolved.relative_to(folder.resolve())
+    except ValueError as error:
+        raise ProfileError(f"{label} escapes {folder}") from error
+    if not resolved.is_file():
+        raise ProfileError(f"{label} does not exist: {resolved}")
+    return resolved
+
+
+def _check_calibrations(
+    kit: Path,
+    current: dict[str, Any],
+) -> list[dict[str, Any]]:
+    root = kit / "calibrations"
+    if not root.exists():
+        return []
+    if not root.is_dir():
+        raise ProfileError(f"calibrations path is not a directory: {root}")
+
+    found: list[dict[str, Any]] = []
+    for revision_dir in sorted(path for path in root.iterdir() if path.is_dir()):
+        revision = revision_dir.name
+        profile = _profile_for_revision(kit, revision)
+        for folder in sorted(path for path in revision_dir.iterdir() if path.is_dir()):
+            record_path = folder / "calibration-record.json"
+            record = _require_object(
+                _load_json(record_path),
+                ["calibrations", revision, folder.name],
+                {
+                    "schema_version",
+                    "calibration_id",
+                    "kind",
+                    "created_at",
+                    "attempts",
+                    "failure_note",
+                    "character_id",
+                    "character_revision",
+                    "profile_sha256",
+                    "master_sha256",
+                    "job_file",
+                    "job_sha256",
+                    "image_file",
+                    "image_sha256",
+                    "image_bytes",
+                    "image_media_type",
+                    "qa_note",
+                },
+            )
+            if record["schema_version"] != CALIBRATION_SCHEMA_VERSION:
+                raise ProfileError(f"unsupported calibration record: {record_path}")
+            if record["calibration_id"] != folder.name:
+                raise ProfileError(f"calibration folder and id differ: {folder}")
+            if record["kind"] not in CALIBRATION_KINDS:
+                raise ProfileError(f"unsupported calibration kind: {record['kind']}")
+            if record["attempts"] < 2:
+                raise ProfileError(f"calibration lacks two failed attempts: {folder}")
+            if record["character_id"] != profile["character_id"]:
+                raise ProfileError(f"calibration character mismatch: {folder}")
+            if record["character_revision"] != revision:
+                raise ProfileError(f"calibration revision mismatch: {folder}")
+            author_profile = {
+                key: profile[key] for key in AUTHOR_KEY_ORDER
+            }
+            profile_hash = hashlib.sha256(
+                json.dumps(
+                    author_profile,
+                    ensure_ascii=False,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ).encode("utf-8")
+            ).hexdigest()
+            if record["profile_sha256"] != profile_hash:
+                raise ProfileError(f"calibration profile hash mismatch: {folder}")
+            if record["master_sha256"] != profile["assets"]["sha256"]:
+                raise ProfileError(f"calibration master hash mismatch: {folder}")
+
+            job_path = _safe_calibration_file(folder, record["job_file"], "calibration job")
+            image_path = _safe_calibration_file(folder, record["image_file"], "calibration image")
+            if _sha256(job_path) != record["job_sha256"]:
+                raise ProfileError(f"calibration job hash mismatch: {folder}")
+            media_type, _ = _detect_image(image_path)
+            if media_type != record["image_media_type"]:
+                raise ProfileError(f"calibration media type mismatch: {folder}")
+            if image_path.stat().st_size != record["image_bytes"]:
+                raise ProfileError(f"calibration image size mismatch: {folder}")
+            if _sha256(image_path) != record["image_sha256"]:
+                raise ProfileError(f"calibration image hash mismatch: {folder}")
+            found.append(
+                {
+                    "calibration_id": record["calibration_id"],
+                    "kind": record["kind"],
+                    "revision": revision,
+                    "image": str(image_path.resolve()),
+                    "active": revision == f"r{current['revision']:03d}",
+                }
+            )
+    return found
 
 
 def _load_prompt_source(
@@ -2322,6 +2447,195 @@ def build_prompt_bundle(
     }
 
 
+def _calibration_task(kind: str, failure_note: str) -> str:
+    tasks = {
+        "turnaround": (
+            "生成一张干净的角色辅助校准板，只画同一角色的正面、严格侧面和背面全身；"
+            "三格比例、服装层级、附肢连接点和标志物完全一致，不设计新身份，不添加展示性场景。"
+        ),
+        "action": (
+            "生成一张干净的角色动作辅助校准板，只画同一角色完成四个与失败动作相关的关键姿态；"
+            "动作清楚但骨骼比例、服装、配件和标志物不漂移，不设计新身份。"
+        ),
+        "hands": (
+            "生成一张干净的手部或爪部辅助校准板，保留同一角色完整身份，展示静止、抓握、指向和施力；"
+            "每格肢体连接和手指或爪趾数量一致，不设计新身份。"
+        ),
+        "accessory": (
+            "生成一张干净的标志配件辅助校准板，展示配件的正面、侧面、背面、连接方式和动作中的位置；"
+            "配件尺寸、材质、颜色与角色主参考图一致，不设计新身份。"
+        ),
+    }
+    return f"{tasks[kind]}\n需要校准的已观察失败：{failure_note}"
+
+
+def _calibration_job(
+    kit: Path,
+    calibration_id: str,
+    kind: str,
+    failure_note: str,
+    attempts: int,
+) -> dict[str, Any]:
+    if not REFERENCE_ID_RE.fullmatch(calibration_id):
+        raise ProfileError(
+            "calibration-id must start with a letter and use lowercase letters, "
+            "numbers, and hyphens"
+        )
+    if kind not in CALIBRATION_KINDS:
+        raise ProfileError("unsupported calibration kind")
+    if attempts < 2:
+        raise ProfileError(
+            "an auxiliary calibration board is allowed only after the same drift "
+            "has failed at least twice"
+        )
+    failure_note = _require_text(failure_note, ["failure_note"], 1000)
+    character = build_prompt_bundle(
+        kit.resolve(),
+        "scene",
+        _calibration_task(kind, failure_note),
+    )
+    return {
+        "schema_version": CALIBRATION_SCHEMA_VERSION,
+        "calibration_id": calibration_id,
+        "kind": kind,
+        "created_at": dt.datetime.now(dt.timezone.utc).isoformat(),
+        "attempts": attempts,
+        "failure_note": failure_note,
+        "character_id": character["character_id"],
+        "character_revision": character["character_revision"],
+        "profile_sha256": character["profile_sha256"],
+        "master_reference": character["master_reference"],
+        "master_sha256": character["master_sha256"],
+        "prompt_sha256": character["prompt_sha256"],
+        "prompt": character["prompt"],
+    }
+
+
+def _validate_calibration_job(data: Any) -> dict[str, Any]:
+    job = _require_object(
+        data,
+        ["calibration_job"],
+        {
+            "schema_version",
+            "calibration_id",
+            "kind",
+            "created_at",
+            "attempts",
+            "failure_note",
+            "character_id",
+            "character_revision",
+            "profile_sha256",
+            "master_reference",
+            "master_sha256",
+            "prompt_sha256",
+            "prompt",
+        },
+    )
+    if job["schema_version"] != CALIBRATION_SCHEMA_VERSION:
+        raise ProfileError("unsupported calibration job schema")
+    if not REFERENCE_ID_RE.fullmatch(str(job["calibration_id"])):
+        raise ProfileError("invalid calibration id")
+    if job["kind"] not in CALIBRATION_KINDS:
+        raise ProfileError("unsupported calibration kind")
+    if not isinstance(job["attempts"], int) or job["attempts"] < 2:
+        raise ProfileError("calibration job requires at least two failed attempts")
+    _require_text(job["failure_note"], ["calibration_job", "failure_note"], 1000)
+    prompt = _require_text(job["prompt"], ["calibration_job", "prompt"], 50000)
+    if hashlib.sha256(prompt.encode("utf-8")).hexdigest() != job["prompt_sha256"]:
+        raise ProfileError("calibration prompt SHA-256 mismatch")
+    return job
+
+
+def _register_calibration(
+    kit: Path,
+    job_path: Path,
+    image_path: Path,
+    qa_note: str,
+) -> dict[str, Any]:
+    kit = kit.resolve()
+    _check_kit(kit)
+    job = _validate_calibration_job(_load_json(job_path))
+    current = build_prompt_bundle(
+        kit,
+        "scene",
+        "验证当前角色版本；不生成图片。",
+    )
+    for field in (
+        "character_id",
+        "character_revision",
+        "profile_sha256",
+        "master_reference",
+        "master_sha256",
+    ):
+        if job[field] != current[field]:
+            raise ProfileError(
+                f"calibration job no longer matches the current character: {field}"
+            )
+    qa_note = _require_text(qa_note, ["qa_note"], 1000)
+    media_type, extension = _detect_image(image_path)
+    destination = (
+        kit
+        / "calibrations"
+        / str(job["character_revision"])
+        / str(job["calibration_id"])
+    )
+    if destination.exists():
+        raise ProfileError(f"refusing to overwrite calibration: {destination}")
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    stage = destination.parent / f".{destination.name}.{uuid.uuid4().hex}.staging"
+    stage.mkdir(parents=False, exist_ok=False)
+    archived_job = stage / "calibration-job.json"
+    archived_job.write_bytes(_json_bytes(job))
+    archived_image = stage / f"calibration{extension}"
+    shutil.copyfile(image_path, archived_image)
+    record = {
+        "schema_version": CALIBRATION_SCHEMA_VERSION,
+        "calibration_id": job["calibration_id"],
+        "kind": job["kind"],
+        "created_at": dt.datetime.now(dt.timezone.utc).isoformat(),
+        "attempts": job["attempts"],
+        "failure_note": job["failure_note"],
+        "character_id": job["character_id"],
+        "character_revision": job["character_revision"],
+        "profile_sha256": job["profile_sha256"],
+        "master_sha256": job["master_sha256"],
+        "job_file": archived_job.name,
+        "job_sha256": _sha256(archived_job),
+        "image_file": archived_image.name,
+        "image_sha256": _sha256(archived_image),
+        "image_bytes": archived_image.stat().st_size,
+        "image_media_type": media_type,
+        "qa_note": qa_note,
+    }
+    (stage / "calibration-record.json").write_bytes(_json_bytes(record))
+    os.replace(stage, destination)
+    checked = _check_kit(kit)
+    return next(
+        item
+        for item in checked["calibrations"]
+        if item["calibration_id"] == job["calibration_id"]
+        and item["revision"] == job["character_revision"]
+    )
+
+
+def _active_calibration_references(
+    kit: Path,
+    kind: str | None,
+) -> dict[str, Any]:
+    checked = _check_kit(kit.resolve())
+    active = [
+        item
+        for item in checked["calibrations"]
+        if item["active"] and (kind is None or item["kind"] == kind)
+    ]
+    return {
+        "status": "PASS",
+        "character_id": checked["character_id"],
+        "character_revision": checked["revision"],
+        "references": active,
+    }
+
+
 def _command_prompt(args: argparse.Namespace) -> int:
     result = build_prompt_bundle(
         Path(args.source),
@@ -2370,6 +2684,52 @@ def _command_finalize(args: argparse.Namespace) -> int:
 
 def _command_check(args: argparse.Namespace) -> int:
     result = _check_kit(Path(args.kit))
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+    return 0
+
+
+def _command_calibration_prompt(args: argparse.Namespace) -> int:
+    output = Path(args.output)
+    if output.exists():
+        raise ProfileError(f"refusing to overwrite existing file: {output}")
+    job = _calibration_job(
+        Path(args.kit),
+        args.calibration_id,
+        args.kind,
+        args.failure_note,
+        args.attempts,
+    )
+    _write_new_file(output, _json_bytes(job))
+    print(
+        json.dumps(
+            {
+                "status": "CREATED",
+                "job": str(output.resolve()),
+                **job,
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+    )
+    return 0
+
+
+def _command_register_calibration(args: argparse.Namespace) -> int:
+    result = _register_calibration(
+        Path(args.kit),
+        Path(args.job),
+        Path(args.image),
+        args.qa_note,
+    )
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+    return 0
+
+
+def _command_calibration_references(args: argparse.Namespace) -> int:
+    result = _active_calibration_references(
+        Path(args.kit),
+        args.kind or None,
+    )
     print(json.dumps(result, ensure_ascii=False, indent=2))
     return 0
 
@@ -2463,6 +2823,49 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     check_parser.add_argument("kit", help="Character kit directory.")
     check_parser.set_defaults(handler=_command_check)
+
+    calibration_prompt_parser = subparsers.add_parser(
+        "calibration-prompt",
+        help=(
+            "Create a revision-bound auxiliary reference job after the same "
+            "angle or action drift has failed at least twice."
+        ),
+    )
+    calibration_prompt_parser.add_argument("kit")
+    calibration_prompt_parser.add_argument("--output", required=True)
+    calibration_prompt_parser.add_argument("--calibration-id", required=True)
+    calibration_prompt_parser.add_argument(
+        "--kind",
+        required=True,
+        choices=sorted(CALIBRATION_KINDS),
+    )
+    calibration_prompt_parser.add_argument("--failure-note", required=True)
+    calibration_prompt_parser.add_argument("--attempts", type=int, required=True)
+    calibration_prompt_parser.set_defaults(handler=_command_calibration_prompt)
+
+    register_calibration_parser = subparsers.add_parser(
+        "register-calibration",
+        help="Archive an approved auxiliary reference without changing identity.",
+    )
+    register_calibration_parser.add_argument("kit")
+    register_calibration_parser.add_argument("--job", required=True)
+    register_calibration_parser.add_argument("--image", required=True)
+    register_calibration_parser.add_argument("--qa-note", required=True)
+    register_calibration_parser.set_defaults(handler=_command_register_calibration)
+
+    calibration_references_parser = subparsers.add_parser(
+        "calibration-references",
+        help="Return only calibration boards valid for the current character revision.",
+    )
+    calibration_references_parser.add_argument("kit")
+    calibration_references_parser.add_argument(
+        "--kind",
+        choices=sorted(CALIBRATION_KINDS),
+        default="",
+    )
+    calibration_references_parser.set_defaults(
+        handler=_command_calibration_references
+    )
 
     return parser
 

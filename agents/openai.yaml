@@ -1,4 +1,4 @@
 interface:
   display_name: "IP Studio"
-  short_description: "创建并锁定 IP 角色，自动制作主页视觉、文章配图和 Codex 桌宠"
-  default_prompt: "使用 $ip-studio 从零创建并锁定一个可长期复用的个人 IP 角色，再把它制作成头像、文章配图或 Codex 桌宠。"
+  short_description: "锁定 IP 角色，直接生成和修订文章、主页视觉及 Codex 桌宠"
+  default_prompt: "使用 $ip-studio 创建或读取已锁定的 IP 角色；环境支持生图时直接完成、检查并归档所需视觉，没有生图能力时再交付完整提示词包。"

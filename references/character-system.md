@@ -152,3 +152,23 @@ Q 版阶段只把用户已经确认的特征视为固定，尚未确认的合理
 - 绘制方式和材质表现。
 
 测试失败时，先补足含糊的生产者字段；档案已经明确但图片仍漂移时，重新生成更清楚的主参考图。测试图不进入正式角色包，也不成为下一次测试的参考。
+
+## 10. 条件式辅助校准板
+
+单张主参考图仍是唯一图片身份真源。只有同一类角度、动作、手部或配件漂移在同一角色版本上连续失败至少两次，而且档案与主图已经明确时，才建立一张辅助校准板。先运行：
+
+```text
+python scripts/character_kit.py calibration-prompt <kit-folder> --output <job-json> --calibration-id <slug> --kind <turnaround|action|hands|accessory> --failure-note <两次可见失败> --attempts <count>
+```
+
+用 `job-json` 中的 `prompt` 和 `master_reference` 通过已经选定的图像入口实际生成。校准板只解决被记录的失败：`turnaround` 展示正、严格侧、背三视角，`action` 展示相关动作关键姿态，`hands` 展示静止、抓握、指向和施力，`accessory` 展示配件各面与连接方式。它不能新增身份细节，也不能成为更高优先级的参考。
+
+实际打开图片，确认所有格是同一角色、没有新增结构，且失败部位比前两次更明确后运行：
+
+```text
+python scripts/character_kit.py register-calibration <kit-folder> --job <job-json> --image <approved-image> --qa-note <可见依据>
+python scripts/character_kit.py calibration-references <kit-folder> --kind <kind>
+python scripts/character_kit.py check <kit-folder>
+```
+
+下游只有在当前任务确实涉及该失败类型时，才把返回图片作为 `character-calibration` 参考加入视觉简报；不要默认把所有校准板塞进每次生图。记录绑定角色 revision、档案 hash 和主图 hash，角色升版后不会再由 `calibration-references` 返回。旧记录仍保留用于追溯，但不能修改身份或替代主参考图。

@@ -33,7 +33,7 @@ Agent 从当前内容和用户提供的资料直接填写草稿。用户不需�
 python scripts/visual_kit.py prompt <character-kit> --brief <brief-path>
 ```
 
-脚本先验证角色包和视觉简报，再从角色档案生成完整身份描述。命令输出的 `image_references` 已按顺序列出单张主参考图和其它资料，输出的 `prompt` 是本次唯一生图输入；Agent 把两者一起交给生图能力。
+脚本先验证角色包和视觉简报，再从角色档案生成完整身份描述。命令输出的 `image_references` 已按顺序列出单张主参考图和其它资料，输出的 `prompt` 是本次唯一生图输入；Agent 用 `SKILL.md` 已选择的图像入口实际执行两者。
 
 角色身份和当前画面职责分别处理：
 
@@ -103,7 +103,35 @@ python scripts/visual_kit.py style-references minimal-handdrawn
 
 默认采用轻量概念图解与二次元插画结合的风格，重点表现对象怎样连接、分工、转换、冲突或改变结果。角色亲自移动、连接、拆分、选择、阻挡或转换对象，或者让机制对角色造成可见的前后状态变化。文字可以省略；确有必要时只使用一个短标题、二至五个短标签，以及必要数字、比例或专有名词。画面在解释清楚这一项内容时停止。选择极简手绘内容视觉后，优先使用一个物理隐喻场景；只有关系本身无法由单一动作表达时，才使用连续流程或并置对比。
 
-## 7. 自动检查与重试
+## 7. 整篇文章配图组
+
+用户要求给整篇文章配图时，先规划全组，不按段落机械出图，也不先假定四张或八张。运行：
+
+```text
+python scripts/visual_kit.py plan-schema
+python scripts/visual_kit.py plan-draft <plan-path> --set-id <slug> --language <language>
+```
+
+阅读全文，找出只有图像化后才会明显降低理解成本的认知锚点。每项必须记录互不重复的核心关系、应该插在哪段之后，以及能在原文中按顺序找到的 `source_excerpt`；数量由真实锚点决定。相邻图片不能重复解释同一结论，纯装饰、换句话说和没有角色作用空间的段落不进入计划。
+
+根据关系选择结构：变化过程或步骤用 `process`，前后差异用 `comparison`，对象间依赖用 `structural-relation`，抽象判断用 `conceptual-metaphor`，具体情境用 `local-scene`。物件、动作和空间关系必须从当前文章重新创造，不从风格案例复制固定物件池。
+
+完成计划后运行：
+
+```text
+python scripts/visual_kit.py materialize-plan <plan-path> --output <ordered-brief-directory>
+```
+
+脚本验证原文片段与顺序，为每个锚点生成现有 `article-illustration` 简报。按返回顺序逐张运行 `prompt`、实际生图、看图、`finalize` 和 `check`；每张仍遵守单图合同，不建立第二套文章插图提示格式。全部通过后运行：
+
+```text
+python scripts/visual_kit.py finalize-set <character-kit> --plan <plan-path>
+python scripts/visual_kit.py check-set <article-set-folder> --kit <character-kit>
+```
+
+文章配图组记录正文顺序、插入位置、原文锚点和它实际消费的每一个 visual revision。任何单图的内容与计划不一致、缺失或未通过检查时，整组不能归档完成。
+
+## 8. 自动检查与重试
 
 生成后实际打开图片，按下面顺序检查：
 
@@ -118,7 +146,38 @@ python scripts/visual_kit.py style-references minimal-handdrawn
 
 不通过时先修正视觉简报中最早的错误判断，再从角色档案和原始资料重新生成，不以失败图连续衍生。需要改变事实、叙事重点或角色固定特征时，返回 `SKILL.md` 的主流程处理取舍。
 
-## 8. 归档与停止
+## 9. 已归档视觉的无损修订
+
+用户要求“删标题，其它不变”“改错字”“调整动作”或“换重点”时，先读取 visual 根目录的 `current.json`、当前 revision 的 `visual-record.json`、视觉简报和最终图片，再选择唯一修订范围：
+
+- `local-rendering`：删除或替换局部文字、修明显渲染错误、轻调局部位置；上一版成图是编辑底图，未点名内容保持不变。
+- `content-structure`：核心重点、动作因果、构图结构或文字层级发生变化；从内容真源和角色真源按新简报重做，上一版只校准连续性。
+- `character-revision`：固定角色特征已正式升版；新主参考图是身份真源，旧成图只保留当前视觉的用途和节奏。
+
+先修改同一个 visual-id 的简报，再运行：
+
+```text
+python scripts/visual_kit.py revision-prompt <character-kit> --visual <visual-folder> --brief <revised-brief> --change-scope <scope> --note <exact-change>
+```
+
+用返回的 `prompt` 和有序 `image_references` 实际编辑或重生，其中第二张输入固定为上一版成图。检查通过后运行：
+
+```text
+python scripts/visual_kit.py revise <character-kit> --visual <visual-folder> --brief <revised-brief> --image <approved-image> --change-scope <scope> --note <exact-change>
+python scripts/visual_kit.py check <visual-folder> --kit <character-kit>
+```
+
+每次修订创建 `r002`、`r003` 等新目录，旧 revision 与生成输入继续保留。不要覆盖旧图，也不要另建一个失去父版本关系的新 visual-id。角色未升版时不能使用 `character-revision`，角色已经改变时也不能把它伪装成局部修图。
+
+旧版平铺目录不属于正常运行合同。发现 `<visual-folder>/visual-record.json` 而没有 `current.json` 时，只能显式运行一次：
+
+```text
+python scripts/visual_kit.py migrate-visual <visual-folder> --kit <character-kit>
+```
+
+迁移把旧结果变成 `r001`，并把原平铺目录移动到同级 `.ip-studio-legacy-archives/` 保留。迁移完成后，`prompt`、`revise`、`check` 和文章配图组只消费版本化结构，不维护两套读取逻辑。
+
+## 10. 归档与停止
 
 用户批准或已经授权 Agent 代为定稿后运行：
 
@@ -131,8 +190,12 @@ python scripts/visual_kit.py check <visual-folder> --kit <character-kit>
 
 ```text
 <character-kit>/derivatives/<kind>/<visual-id>/
+├── current.json
+└── revisions/
+    ├── r001/
+    └── r002/
 ```
 
-其中保存最终图片、视觉简报、当次角色档案快照、完整生图输入、输入资料副本和校验记录。角色包当前身份文件及历史版本保持不变。候选图、自动重试图和检查截图留在任务临时目录，不进入正式衍生目录。
+每个 revision 保存最终图片、视觉简报、当次角色档案快照、完整生图输入、输入资料副本、父版本与变更范围；`current.json` 只指向当前 revision。角色包当前身份文件及历史版本保持不变。候选图、自动重试图和检查截图留在任务临时目录，不进入正式衍生目录。
 
-脚本通过后重新打开最终图片，并重新读取 `visual-record.json`。交付时先展示图片，再说明它表达的核心关系、所用角色版本和绝对保存路径；满足当前请求后停止，不自动扩展成其它比例或其它媒体。
+脚本通过后重新打开当前 revision 的最终图片，并重新读取其 `visual-record.json`。交付时先展示图片，再说明它表达的核心关系、visual revision、角色版本和绝对保存路径；文章配图组按正文顺序展示。满足当前请求后停止，不自动扩展成其它比例或其它媒体。
