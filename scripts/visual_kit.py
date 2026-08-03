@@ -19,6 +19,7 @@ from typing import Any
 import character_kit
 
 
+SKILL_ROOT = Path(__file__).resolve().parents[1]
 SCHEMA_VERSION = "1.0"
 RECORD_SCHEMA_VERSION = "1.0"
 VISUAL_ID_RE = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$")
@@ -107,6 +108,14 @@ DEFAULTS = {
     "explainer": ("4:5", "process"),
     "article-illustration": ("16:9", "conceptual-metaphor"),
 }
+MINIMAL_HANDDRAWN_ROLE = "minimal-handdrawn-style"
+MINIMAL_HANDDRAWN_KINDS = {"cover", "explainer", "article-illustration"}
+MINIMAL_HANDDRAWN_REFERENCE_FILES = (
+    "assets/visual-languages/minimal-handdrawn/examples/information-well.png",
+    "assets/visual-languages/minimal-handdrawn/examples/idea-press.png",
+    "assets/visual-languages/minimal-handdrawn/examples/content-fermentation.png",
+    "assets/visual-languages/minimal-handdrawn/examples/trust-bridge.png",
+)
 
 
 class VisualError(ValueError):
@@ -213,6 +222,31 @@ def _resolve_reference(path_text: str, base_dir: Path) -> Path:
     resolved = resolved.resolve()
     _detect_image(resolved)
     return resolved
+
+
+def _style_reference_manifest(style: str) -> dict[str, Any]:
+    if style != "minimal-handdrawn":
+        raise VisualError(f"unsupported visual language: {style}")
+    references: list[dict[str, str]] = []
+    for relative in MINIMAL_HANDDRAWN_REFERENCE_FILES:
+        path = (SKILL_ROOT / relative).resolve()
+        _detect_image(path)
+        references.append(
+            {"role": MINIMAL_HANDDRAWN_ROLE, "path": str(path)}
+        )
+    source_notice = (
+        SKILL_ROOT / "assets/visual-languages/minimal-handdrawn/SOURCE.md"
+    ).resolve()
+    if not source_notice.is_file():
+        raise VisualError(
+            f"missing visual language source notice: {source_notice}"
+        )
+    return {
+        "status": "PASS",
+        "visual_language": style,
+        "brief_references": references,
+        "source_notice": str(source_notice),
+    }
 
 
 def _safe_relative(root: Path, relative: str, label: str) -> Path:
@@ -396,6 +430,22 @@ def _validate_brief(data: Any, base_dir: Path) -> dict[str, Any]:
         seen_paths.add(resolved)
         cleaned_references.append({"role": role, "path": str(resolved)})
     brief["references"] = cleaned_references
+    minimal_handdrawn_count = sum(
+        reference["role"] == MINIMAL_HANDDRAWN_ROLE
+        for reference in cleaned_references
+    )
+    if minimal_handdrawn_count and kind not in MINIMAL_HANDDRAWN_KINDS:
+        _fail(
+            "$.references",
+            "minimal-handdrawn-style is only available for cover, "
+            "explainer, or article-illustration",
+        )
+    if minimal_handdrawn_count == 1:
+        _fail(
+            "$.references",
+            "minimal-handdrawn-style requires at least two complete style "
+            "references",
+        )
 
     decisions = brief["decisions"]
     if not isinstance(decisions, list) or not 1 <= len(decisions) <= 50:
@@ -501,6 +551,21 @@ def _shared_decisions(brief: dict[str, Any]) -> str:
     )
 
 
+def _uses_minimal_handdrawn(brief: dict[str, Any]) -> bool:
+    return any(
+        reference["role"] == MINIMAL_HANDDRAWN_ROLE
+        for reference in brief["references"]
+    )
+
+
+def _minimal_handdrawn_contract() -> str:
+    return """视觉语言已选择“极简手绘 IP”。带有 minimal-handdrawn-style 角色的完整图片只用于校准留白、线条密度、色彩职责和角色参与方式，不临摹其中的构图、物体组合、文字或隐喻。
+
+把抽象内容重新翻译成一个动作、一件无需说明就能认出的低技术物件和一个可见结果。整张图是一个连续的物理场景，角色亲自推动因果关系。主体与核心装置合计约占画面 40%–60%，至少保留约 35% 纯白空白。使用细而略有手绘感的黑线和平涂；黑色负责角色与结构，其余 2–3 种强调色各自只负责流动、问题或结果、提示中的一项。表情克制，优先用身体方向和对象反馈表达情绪。短标签贴近对象，能删就删。
+
+不要生成卡片墙、仪表盘、网页界面、嵌套边框、独立小插图拼盘、完整环境、渐变、投影、体积光、写实纹理或无因果作用的装饰图标。"""
+
+
 def _render_task(brief: dict[str, Any]) -> str:
     kind = brief["kind"]
     composition = brief["composition"]
@@ -510,6 +575,43 @@ def _render_task(brief: dict[str, Any]) -> str:
     conclusion = composition["conclusion"] or "无"
     mapping = _reference_mapping(brief)
     decisions = _shared_decisions(brief)
+    minimal_handdrawn = _uses_minimal_handdrawn(brief)
+
+    if kind == "cover" and minimal_handdrawn:
+        return f"""直接生成一张 {composition['aspect_ratio']} 横版极简手绘文章封面，不输出分析过程。
+
+图片对应关系：
+{mapping}
+
+{decisions}
+
+{_minimal_handdrawn_contract()}
+
+只采用一个“{composition['structure']}”核心叙事，让具体核心对象、角色动作、物件状态和标题共同表达同一项变化。主标题准确写为“{title}”，最多两行；副标题：{subtitle}。标题与场景共享留白，不叠加海报边框、装饰层或第二场景。品牌为核心时只保留必要名称、logo 或品牌色，品牌为辅助时把它压到相关对象附近。"""
+
+    if kind == "explainer" and minimal_handdrawn:
+        return f"""直接生成一张适合手机阅读的 {composition['aspect_ratio']} 极简手绘说明图，不输出分析过程。
+
+图片对应关系：
+{mapping}
+
+{decisions}
+
+{_minimal_handdrawn_contract()}
+
+只采用“{composition['structure']}”这一种关系，把 3–5 个关键节点放在同一个装置、路径或连续互动中，不拆成卡片和模块。主标题准确写为“{title}”，最多两行；节点短标签依次为：{labels}；结论写为“{conclusion}”。角色接收输入、完成关键动作并把可见结果传向下一节点，位置、流向和对象状态本身形成阅读顺序。"""
+
+    if kind == "article-illustration" and minimal_handdrawn:
+        return f"""直接生成一张 {composition['aspect_ratio']} 横版极简手绘正文插图，不输出分析过程。
+
+图片对应关系：
+{mapping}
+
+{decisions}
+
+{_minimal_handdrawn_contract()}
+
+只解释当前内容中最值得图像化的一项关系或变化，采用“{composition['structure']}”表达。优先使用一个物理隐喻场景：角色亲自移动、连接、拆分、选择、阻挡、压制、倒入或取出对象，并让对象的位置、流向或前后状态显示结果。短标题：{title}；副标题：{subtitle}；必要标签：{labels}。隐藏全部文字后仍应能看懂主要动作和结果；画面到此即止。"""
 
     if kind == "cover":
         return f"""直接生成一张 {composition['aspect_ratio']} 横版二次元文章封面，不输出分析过程。
@@ -970,11 +1072,29 @@ def _schema() -> dict[str, Any]:
             "reference": sorted(REFERENCE_KEYS),
             "decision": sorted(DECISION_KEYS),
         },
+        "visual_languages": {
+            "minimal-handdrawn": {
+                "available_for": sorted(MINIMAL_HANDDRAWN_KINDS),
+                "reference_role": MINIMAL_HANDDRAWN_ROLE,
+                "reference_count": len(MINIMAL_HANDDRAWN_REFERENCE_FILES),
+            }
+        },
     }
 
 
 def _command_schema(_: argparse.Namespace) -> int:
     print(json.dumps(_schema(), ensure_ascii=False, indent=2))
+    return 0
+
+
+def _command_style_references(args: argparse.Namespace) -> int:
+    print(
+        json.dumps(
+            _style_reference_manifest(args.visual_language),
+            ensure_ascii=False,
+            indent=2,
+        )
+    )
     return 0
 
 
@@ -1038,6 +1158,16 @@ def _build_parser() -> argparse.ArgumentParser:
         "schema", help="Print the visual brief contract."
     )
     schema_parser.set_defaults(handler=_command_schema)
+
+    style_parser = subparsers.add_parser(
+        "style-references",
+        help="Print absolute image references for a built-in visual language.",
+    )
+    style_parser.add_argument(
+        "visual_language",
+        choices=["minimal-handdrawn"],
+    )
+    style_parser.set_defaults(handler=_command_style_references)
 
     draft_parser = subparsers.add_parser(
         "draft", help="Create a non-destructive visual brief draft."
