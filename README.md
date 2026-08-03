@@ -1,58 +1,54 @@
 # IP Studio
 
-`ip-studio` 是一个面向 Codex 与具备生图、看图能力的 AI Agent 的角色生产 Skill。它帮助用户从零建立可长期复用的个人或品牌 IP 角色，也能导入和修改已有形象，并让同一角色继续用于头像、主页视觉、文章配图和 Codex v2 桌宠。
+`ip-studio` 是一个可由 Codex 或兼容 AI Agent 加载的角色生产 Skill。你可以交给它零散的身份线索、一张已经认可的角色图，或一个已锁定的角色包；它会把这些材料整理成稳定角色，并继续制作传播视觉或 Codex v2 桌宠。
 
-设计目标是让 AI 负责整理资料、补全结构、生图、审图、重试、版本管理和文件校验，只把真正会改变角色身份或传播方向的选择交给用户。
+它负责补全结构、生图、看图检查、重试、版本管理和文件校验。你只需要决定会改变角色身份、内容重点或既有安装的事项。
+
+## 你会得到什么
+
+- **建立或修改角色**：得到完整角色档案、角色说明、单张正式主参考图和可回读的历史版本。
+- **制作衍生视觉**：得到头像、主页横幅、资料卡、文章封面、说明图或正文插图，以及对应的内容简报、生成输入和校验记录。
+- **制作 Codex 桌宠**：得到包含九组应用状态、十六个注视方向和 QA 证据的 Codex v2 宠物目录，并可在确认后安装到本机 Codex。
+
+角色包是后两条工作流的共同输入。只有一张已认可图片时，IP Studio 会先把它导入并锁定为角色包；还没有角色时，它会先完成角色设计，再回到你原本要做的视觉或桌宠任务。
+
+**直接开始：** [安装 Skill，并选择一条可直接复制的请求](#安装与第一次使用)。
 
 ## 效果展示
 
-下面的“灯灯”由 IP Studio 从角色档案和单张主参考图持续驱动。角色的双耳、额毛、墨蓝斗篷、月牙扣、狐尾与独立悬挂灯笼保持不变，动作和信息结构则随传播任务改变。
+下面用仓库内的“灯灯”示例展示 IP Studio 的三类交付：稳定的角色身份、持续复用的内容视觉，以及 Codex v2 桌宠。角色的双耳、额毛、墨蓝斗篷、月牙扣、狐尾与独立悬挂灯笼保持一致，动作、场景和信息结构随任务变化。
 
 <p align="center">
-  <img src="docs/images/lantern-fox-banner.webp" alt="灯笼狐个人主页横幅" width="100%">
+  <img src="docs/images/lantern-fox-banner.webp" alt="灯笼狐个人主页横幅示例" width="100%">
 </p>
-<p align="center"><sub>个人主页横幅：角色亲自用灯笼把复杂问题照亮。</sub></p>
-
-<table>
-  <tr>
-    <td align="center" width="36%">
-      <img src="docs/images/lantern-fox-master.webp" alt="灯笼狐正式主参考图"><br>
-      <sub>正式主参考图：角色档案登记的唯一默认视觉参考。</sub>
-    </td>
-    <td align="center" width="64%">
-      <img src="docs/images/lantern-fox-cover.webp" alt="灯笼狐文章封面"><br>
-      <sub>文章封面：同一 IP 贯穿封面、说明图和正文插图。</sub>
-    </td>
-  </tr>
-</table>
+<p align="center"><sub>主页横幅：角色亲自用灯笼把复杂问题照亮。</sub></p>
 
 <p align="center">
-  <img src="docs/images/lantern-fox-explainer.webp" alt="同一 IP 驱动三类内容视觉的说明图" width="620">
+  <img src="docs/images/lantern-fox-master.webp" alt="灯笼狐正式主参考图示例" width="280">
 </p>
-<p align="center"><sub>说明图：角色不是站在旁边讲解，而是直接承担信息流程中的关键动作。</sub></p>
+<p align="center"><sub>正式主参考图：后续视觉共同读取的单张默认角色参考。</sub></p>
 
 <p align="center">
-  <img src="docs/images/lantern-fox-illustration.webp" alt="身份先锁定、场景再变化的正文插图" width="100%">
+  <img src="docs/images/lantern-fox-cover.webp" alt="灯笼狐文章封面示例" width="100%">
 </p>
-<p align="center"><sub>正文插图：固定角色身份，把动作、场景和氛围作为当次变量。</sub></p>
+<p align="center"><sub>文章封面：同一角色继续承担内容传播任务。</sub></p>
 
 <p align="center">
-  <img src="docs/images/lantern-fox-pet-idle.gif" alt="灯笼狐 Codex 桌宠待机动画" width="192"><br>
+  <img src="docs/images/lantern-fox-explainer.webp" alt="同一 IP 驱动三类内容视觉的说明图示例" width="620">
+</p>
+<p align="center"><sub>说明图：角色直接参与信息流程，而不是站在内容旁边充当装饰。</sub></p>
+
+<p align="center">
+  <img src="docs/images/lantern-fox-illustration.webp" alt="身份先锁定、场景再变化的正文插图示例" width="100%">
+</p>
+<p align="center"><sub>正文插图：固定角色身份，把动作、场景和氛围留给当前任务决定。</sub></p>
+
+<p align="center">
+  <img src="docs/images/lantern-fox-pet-idle.gif" alt="灯笼狐 Codex 桌宠待机动画示例" width="192"><br>
   <sub>Codex v2 桌宠：九组应用状态、十六个注视方向和透明边缘检查。</sub>
 </p>
 
-## 主要能力
-
-- 从零设计、导入或修改风格化人形、动物、拟人、物件和幻想生物。
-- 用完整角色档案与单张主参考图维持跨会话一致性。
-- 生成头像、主页横幅、资料卡、文章封面、说明图和正文插图。
-- 制作包含九组应用状态与十六个注视方向的 Codex v2 桌宠。
-- 自动维护角色版本、衍生视觉记录、桌宠运行记录和旧安装备份。
-- 使用软遮罩和多背景检查处理桌宠透明边缘，减少幕布色残留。
-
-照片级数字分身、Live2D、视频、普通动画和非 Codex 桌宠不属于当前能力范围。
-
-## 安装
+## 安装与第一次使用
 
 将仓库克隆到 Codex 的个人 Skills 目录：
 
@@ -60,18 +56,66 @@
 git clone https://github.com/CheshireMew/ip-studio.git "$env:USERPROFILE\.codex\skills\ip-studio"
 ```
 
-重新打开 Codex 后，可以直接调用：
+重新打开 Codex 后，直接描述你要得到的结果。你不需要运行仓库脚本、编辑 JSON、手动编号或整理生成文件。
+
+### 从零建立角色
 
 ```text
 $ip-studio 从零为我设计并定稿一个可以长期使用的个人 IP 角色。
 ```
 
-制作 Codex 桌宠时需要工作区 Python 环境提供 Pillow 和 NumPy。角色档案及普通衍生视觉脚本只使用 Python 标准库。
+IP Studio 会先给出三条真正不同的角色方向，完成主参考图和一致性检查，再把获批结果写入当前可写工作区的 `ip-studio-output/<角色标识>/`。角色包锁定后即停止；只有你同时点名其它结果时，才继续制作视觉或桌宠。
 
-## 仓库结构
+### 导入或修改已有角色
+
+```text
+$ip-studio 把这张已经确认的角色图导入为可长期复用的角色包。
+```
+
+```text
+$ip-studio 读取 E:\path\to\character-kit，把斗篷改成墨蓝色；其它固定特征保持不变并生成新版本。
+```
+
+导入时请附上图片，修改时请给出角色包路径。改变固定身份会建立新版本，旧版本和旧主参考图会保留。
+
+### 制作头像、主页视觉或文章配图
+
+```text
+$ip-studio 使用 E:\path\to\character-kit，为这篇文章制作一张 5:2 封面。文章内容如下：……
+```
+
+请提供角色包路径、要制作的结果，以及正文、品牌资料或其它内容真源。正式图片会归档到角色包的 `derivatives/<类型>/<视觉标识>/`；归档记录可以重新核对角色版本、内容简报、生成输入、参考资料和最终图片。衍生视觉不会反向修改角色身份，也不会自动扩展成未点名的比例或媒体。
+
+### 制作并安装 Codex 桌宠
+
+```text
+$ip-studio 把 E:\path\to\character-kit 制作并安装为可用的 Codex v2 桌宠。
+```
+
+桌宠路径会生成九组状态动画、十六个注视方向、动态预览、盲审和透明边缘检查，再输出只包含 `pet.json` 与 `spritesheet.webp` 的正式宠物目录。安装成功后，你只需要重新打开 Codex，并在设置中启用宠物；如果同一宠物标识已被不同内容占用，IP Studio 会先保存旧安装并请你确认是否替换。
+
+制作桌宠时，工作区 Python 环境需要提供 Pillow 和 NumPy。角色档案和普通衍生视觉脚本只使用 Python 标准库。
+
+## 角色一致性怎样保持
+
+`character-profile.json` 保存角色可以被重建的结构，档案中登记的单张主参考图提供默认视觉依据。它们共同构成角色身份边界：
+
+1. 角色创建或修改先更新身份，再通过另一姿势和场景检查可复用性。
+2. 衍生视觉和桌宠只读取当前角色档案与主参考图，并保存当次快照。
+3. 当次动作、构图、场景和氛围不会反向写回角色身份。
+4. 正式结果保留版本、输入、校验值和历史，后续任务可以重新读取和验证。
+
+## 能力边界
+
+IP Studio 当前支持风格化人形、动物、拟人、物件和幻想生物，以及与同一角色相连的社交主页视觉、文章视觉和 Codex v2 桌宠。
+
+照片级数字分身、普通个人品牌策略、没有 IP 角色参与的一般视觉、Live2D、视频、通用动画、Windows 独立桌宠和非 Codex 桌宠平台不属于当前能力范围。安装、上传、发送和发布也不会因为生成完成而自动发生；只有“制作可用的 Codex 桌宠”包含本机 Codex 宠物安装。
+
+## 维护者入口
 
 ```text
 ip-studio/
+├─ .project-steward/project.json
 ├─ SKILL.md
 ├─ agents/openai.yaml
 ├─ references/
@@ -85,13 +129,21 @@ ip-studio/
    └─ pet/
 ```
 
-`character-profile.json` 是角色身份的唯一真源。衍生图片和桌宠读取当前角色档案及其中登记的单张主参考图，不会反向修改角色身份。
+`SKILL.md` 是工作流、权限边界和交付标准的正式入口；三个顶层脚本分别负责角色包、衍生视觉和桌宠的机器可验证合同。修改工作流后，先检查三套命令入口仍可读取：
+
+```powershell
+python scripts/character_kit.py --help
+python scripts/visual_kit.py --help
+python scripts/pet_kit.py --help
+```
+
+角色和衍生视觉的最终验收必须读取脚本正式输出并实际看图；桌宠还需要验证完整 8×11 精灵表、九组动画预览、十六方向语义、盲审和安装目录。只运行帮助命令或静态检查不能代替这条真实链路。
 
 ## 隐私
 
 Skill 默认只读取当前请求、当前对话、用户明确提供的材料，以及用户明确指向的角色文件夹。生成的角色包、图片、QA 文件和桌宠运行记录保存在本地输出目录，不属于本仓库，也不会被默认提交。
 
-公开问题或贡献代码前，请自行确认提交中不包含角色私有素材、文章草稿、品牌资料、绝对路径、访问令牌或生成记录。
+公开问题或贡献代码前，请确认提交中不包含角色私有素材、文章草稿、品牌资料、绝对路径、访问令牌或生成记录。
 
 ## 许可
 
