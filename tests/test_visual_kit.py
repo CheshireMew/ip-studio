@@ -12,8 +12,8 @@ sys.path.insert(0, str(ROOT / "scripts"))
 import visual_kit  # noqa: E402
 
 
-def style_references() -> list[dict[str, str]]:
-    return visual_kit._style_reference_manifest("minimal-handdrawn")[
+def style_references(language: str = "minimal-handdrawn") -> list[dict[str, str]]:
+    return visual_kit._style_reference_manifest(language)[
         "brief_references"
     ]
 
@@ -69,7 +69,7 @@ class MinimalHanddrawnContractTests(unittest.TestCase):
             path = Path(reference["path"])
             self.assertTrue(path.is_absolute())
             self.assertTrue(path.is_file())
-            self.assertEqual(reference["role"], visual_kit.MINIMAL_HANDDRAWN_ROLE)
+            self.assertEqual(reference["role"], "minimal-handdrawn-style")
         self.assertTrue(Path(manifest["source_notice"]).is_file())
 
     def test_complete_style_pack_switches_the_render_contract(self) -> None:
@@ -79,7 +79,9 @@ class MinimalHanddrawnContractTests(unittest.TestCase):
         validated = visual_kit._validate_brief(copy.deepcopy(brief), ROOT)
         prompt = visual_kit._render_task(validated)
 
-        self.assertTrue(visual_kit._uses_minimal_handdrawn(validated))
+        self.assertTrue(
+            visual_kit._uses_visual_language(validated, "minimal-handdrawn")
+        )
         self.assertEqual(len(validated["references"]), 4)
         self.assertIn("极简手绘正文插图", prompt)
         self.assertIn("至少保留约 35% 纯白空白", prompt)
@@ -91,7 +93,9 @@ class MinimalHanddrawnContractTests(unittest.TestCase):
         validated = visual_kit._validate_brief(completed_brief(), ROOT)
         prompt = visual_kit._render_task(validated)
 
-        self.assertFalse(visual_kit._uses_minimal_handdrawn(validated))
+        self.assertFalse(
+            visual_kit._uses_visual_language(validated, "minimal-handdrawn")
+        )
         self.assertIn("轻量概念图解与二次元插画结合", prompt)
         self.assertNotIn("视觉语言已选择“极简手绘 IP”", prompt)
 
@@ -117,7 +121,7 @@ class MinimalHanddrawnContractTests(unittest.TestCase):
 
         with self.assertRaisesRegex(
             visual_kit.VisualError,
-            "requires at least two complete style references",
+            "requires its complete built-in reference pack",
         ):
             visual_kit._validate_brief(brief, ROOT)
 
@@ -127,9 +131,110 @@ class MinimalHanddrawnContractTests(unittest.TestCase):
 
         with self.assertRaisesRegex(
             visual_kit.VisualError,
-            "only available for cover, explainer, or article-illustration",
+            "only available for: article-illustration, cover, explainer",
         ):
             visual_kit._validate_brief(brief, ROOT)
+
+
+class OkxEditorialContractTests(unittest.TestCase):
+    def test_manifest_returns_seven_examples_and_exact_logo(self) -> None:
+        manifest = visual_kit._style_reference_manifest("okx-editorial")
+
+        self.assertEqual(manifest["status"], "PASS")
+        self.assertEqual(len(manifest["brief_references"]), 8)
+        self.assertEqual(
+            [item["role"] for item in manifest["brief_references"]].count(
+                "okx-editorial-style"
+            ),
+            7,
+        )
+        logo = manifest["brief_references"][-1]
+        self.assertEqual(logo["role"], "okx-logo-asset")
+        self.assertEqual(Path(logo["path"]).name, "okx-mark-white.png")
+        for reference in manifest["brief_references"]:
+            self.assertTrue(Path(reference["path"]).is_file())
+        self.assertTrue(Path(manifest["source_notice"]).is_file())
+        self.assertTrue(Path(manifest["style_guide"]).is_file())
+
+    def test_complete_pack_switches_prompt_without_copying_reference_copy(self) -> None:
+        brief = completed_brief("explainer")
+        brief["composition"]["aspect_ratio"] = "1:1"
+        brief["brand"] = {
+            "role": "core",
+            "name": "OKX",
+            "visual_cues": "黑白与霓虹黄绿色",
+        }
+        brief["references"] = style_references("okx-editorial")
+
+        validated = visual_kit._validate_brief(copy.deepcopy(brief), ROOT)
+        prompt = visual_kit._render_task(validated)
+
+        self.assertTrue(
+            visual_kit._uses_visual_language(validated, "okx-editorial")
+        )
+        self.assertEqual(validated["composition"]["aspect_ratio"], "1:1")
+        self.assertIn("OKX Editorial", prompt)
+        self.assertIn("#BBFF2F", prompt)
+        self.assertIn("不能像白边贴纸或后期抠图", prompt)
+        self.assertIn("第 9 张图片用于：okx-logo-asset", prompt)
+        for copied_reference_text in ("AI CapEx", "MRVL", "618", "双币赢"):
+            self.assertNotIn(copied_reference_text, prompt)
+
+    def test_incomplete_pack_cannot_activate_the_language(self) -> None:
+        brief = completed_brief()
+        brief["references"] = style_references("okx-editorial")[:-1]
+
+        with self.assertRaisesRegex(
+            visual_kit.VisualError,
+            "okx-editorial requires its complete built-in reference pack",
+        ):
+            visual_kit._validate_brief(brief, ROOT)
+
+    def test_okx_language_rejects_avatar(self) -> None:
+        brief = completed_brief("avatar")
+        brief["references"] = style_references("okx-editorial")
+
+        with self.assertRaisesRegex(
+            visual_kit.VisualError,
+            "okx-editorial is only available for",
+        ):
+            visual_kit._validate_brief(brief, ROOT)
+
+    def test_article_plan_materializes_okx_pack(self) -> None:
+        plan = visual_kit._article_plan_template("okx-plan", "zh-CN")
+        plan["article"] = {
+            "source_label": "测试文章",
+            "source_text": "资金进入系统后开始流动。",
+        }
+        plan["brand"] = {
+            "role": "core",
+            "name": "OKX",
+            "visual_cues": "黑白与霓虹黄绿色",
+        }
+        plan["visual_language"] = "okx-editorial"
+        plan["style_notes"] = "只使用一个视觉中心"
+        brief = completed_brief()
+        plan["shots"] = [
+            {
+                "visual_id": "okx-flow",
+                "placement_after": "资金进入系统后开始流动。",
+                "source_excerpt": "资金进入系统后开始流动。",
+                "message": brief["message"],
+                "structure": "process",
+                "character_action": brief["character_action"],
+                "title": "资金开始流动",
+                "subtitle": "",
+                "labels": ["进入", "使用"],
+                "conclusion": "",
+                "decisions": brief["decisions"],
+            }
+        ]
+
+        validated = visual_kit._validate_article_plan(plan)
+        shot = visual_kit._shot_brief(validated, validated["shots"][0])
+
+        self.assertEqual(len(shot["references"]), 8)
+        self.assertEqual(shot["references"][-1]["role"], "okx-logo-asset")
 
 
 if __name__ == "__main__":

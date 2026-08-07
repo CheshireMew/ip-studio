@@ -101,7 +101,7 @@ ALLOWED_RATIOS = {
     "profile-banner": {"3:1", "5:2", "16:9", "4:1"},
     "profile-card": {"4:5", "3:4", "1:1"},
     "cover": {"5:2"},
-    "explainer": {"4:5", "3:4", "16:9"},
+    "explainer": {"1:1", "4:5", "3:4", "16:9"},
     "article-illustration": {"16:9"},
 }
 DEFAULTS = {
@@ -112,13 +112,85 @@ DEFAULTS = {
     "explainer": ("4:5", "process"),
     "article-illustration": ("16:9", "conceptual-metaphor"),
 }
-MINIMAL_HANDDRAWN_ROLE = "minimal-handdrawn-style"
-MINIMAL_HANDDRAWN_KINDS = {"cover", "explainer", "article-illustration"}
-MINIMAL_HANDDRAWN_REFERENCE_FILES = (
-    "assets/visual-languages/minimal-handdrawn/examples/information-well.png",
-    "assets/visual-languages/minimal-handdrawn/examples/idea-press.png",
-    "assets/visual-languages/minimal-handdrawn/examples/content-fermentation.png",
-    "assets/visual-languages/minimal-handdrawn/examples/trust-bridge.png",
+VISUAL_LANGUAGE_PACKS: dict[str, dict[str, Any]] = {
+    "minimal-handdrawn": {
+        "display_name": "极简手绘 IP",
+        "available_for": {
+            "cover",
+            "explainer",
+            "article-illustration",
+        },
+        "references": (
+            {
+                "role": "minimal-handdrawn-style",
+                "path": "assets/visual-languages/minimal-handdrawn/examples/information-well.png",
+            },
+            {
+                "role": "minimal-handdrawn-style",
+                "path": "assets/visual-languages/minimal-handdrawn/examples/idea-press.png",
+            },
+            {
+                "role": "minimal-handdrawn-style",
+                "path": "assets/visual-languages/minimal-handdrawn/examples/content-fermentation.png",
+            },
+            {
+                "role": "minimal-handdrawn-style",
+                "path": "assets/visual-languages/minimal-handdrawn/examples/trust-bridge.png",
+            },
+        ),
+        "source_notice": "assets/visual-languages/minimal-handdrawn/SOURCE.md",
+    },
+    "okx-editorial": {
+        "display_name": "OKX Editorial",
+        "available_for": {
+            "profile-banner",
+            "profile-card",
+            "cover",
+            "explainer",
+            "article-illustration",
+        },
+        "references": (
+            {
+                "role": "okx-editorial-style",
+                "path": "assets/visual-languages/okx-editorial/examples/01-ai-capex-square.png",
+            },
+            {
+                "role": "okx-editorial-style",
+                "path": "assets/visual-languages/okx-editorial/examples/02-invite-square.png",
+            },
+            {
+                "role": "okx-editorial-style",
+                "path": "assets/visual-languages/okx-editorial/examples/03-ai-infra-landscape.png",
+            },
+            {
+                "role": "okx-editorial-style",
+                "path": "assets/visual-languages/okx-editorial/examples/04-rwa-launch-landscape.png",
+            },
+            {
+                "role": "okx-editorial-style",
+                "path": "assets/visual-languages/okx-editorial/examples/05-web3-night-portrait.png",
+            },
+            {
+                "role": "okx-editorial-style",
+                "path": "assets/visual-languages/okx-editorial/examples/06-mascot-event-square.png",
+            },
+            {
+                "role": "okx-editorial-style",
+                "path": "assets/visual-languages/okx-editorial/examples/07-dragon-boat-square.png",
+            },
+            {
+                "role": "okx-logo-asset",
+                "path": "assets/visual-languages/okx-editorial/logos/okx-mark-white.png",
+            },
+        ),
+        "source_notice": "assets/visual-languages/okx-editorial/SOURCE.md",
+        "style_guide": "assets/visual-languages/okx-editorial/STYLE.md",
+    },
+}
+BUILT_IN_REFERENCE_ROLES = frozenset(
+    reference["role"]
+    for pack in VISUAL_LANGUAGE_PACKS.values()
+    for reference in pack["references"]
 )
 REVISION_SCOPES = {
     "local-rendering",
@@ -259,28 +331,79 @@ def _resolve_reference(path_text: str, base_dir: Path) -> Path:
 
 
 def _style_reference_manifest(style: str) -> dict[str, Any]:
-    if style != "minimal-handdrawn":
+    pack = VISUAL_LANGUAGE_PACKS.get(style)
+    if pack is None:
         raise VisualError(f"unsupported visual language: {style}")
     references: list[dict[str, str]] = []
-    for relative in MINIMAL_HANDDRAWN_REFERENCE_FILES:
-        path = (SKILL_ROOT / relative).resolve()
+    for reference in pack["references"]:
+        path = (SKILL_ROOT / reference["path"]).resolve()
         _detect_image(path)
-        references.append(
-            {"role": MINIMAL_HANDDRAWN_ROLE, "path": str(path)}
-        )
-    source_notice = (
-        SKILL_ROOT / "assets/visual-languages/minimal-handdrawn/SOURCE.md"
-    ).resolve()
+        references.append({"role": reference["role"], "path": str(path)})
+    source_notice = (SKILL_ROOT / pack["source_notice"]).resolve()
     if not source_notice.is_file():
         raise VisualError(
             f"missing visual language source notice: {source_notice}"
         )
-    return {
+    result = {
         "status": "PASS",
         "visual_language": style,
         "brief_references": references,
         "source_notice": str(source_notice),
     }
+    if pack.get("style_guide"):
+        style_guide = (SKILL_ROOT / pack["style_guide"]).resolve()
+        if not style_guide.is_file():
+            raise VisualError(
+                f"missing visual language style guide: {style_guide}"
+            )
+        result["style_guide"] = str(style_guide)
+    return result
+
+
+def _selected_visual_language(brief: dict[str, Any]) -> str:
+    roles = {reference["role"] for reference in brief["references"]}
+    selected = [
+        name
+        for name, pack in VISUAL_LANGUAGE_PACKS.items()
+        if roles & {reference["role"] for reference in pack["references"]}
+    ]
+    if len(selected) > 1:
+        raise VisualError("a brief cannot combine multiple built-in visual languages")
+    return selected[0] if selected else "default"
+
+
+def _validate_visual_language_references(
+    brief: dict[str, Any],
+    kind: str,
+) -> None:
+    selected = _selected_visual_language(brief)
+    if selected == "default":
+        return
+    pack = VISUAL_LANGUAGE_PACKS[selected]
+    if kind not in pack["available_for"]:
+        allowed = ", ".join(sorted(pack["available_for"]))
+        _fail(
+            "$.references",
+            f"{selected} is only available for: {allowed}",
+        )
+    expected = {
+        (
+            reference["role"],
+            str((SKILL_ROOT / reference["path"]).resolve()),
+        )
+        for reference in pack["references"]
+    }
+    actual = {
+        (reference["role"], reference["path"])
+        for reference in brief["references"]
+        if reference["role"] in BUILT_IN_REFERENCE_ROLES
+    }
+    if actual != expected:
+        _fail(
+            "$.references",
+            f"{selected} requires its complete built-in reference pack from "
+            f"style-references {selected}",
+        )
 
 
 def _safe_relative(root: Path, relative: str, label: str) -> Path:
@@ -464,22 +587,7 @@ def _validate_brief(data: Any, base_dir: Path) -> dict[str, Any]:
         seen_paths.add(resolved)
         cleaned_references.append({"role": role, "path": str(resolved)})
     brief["references"] = cleaned_references
-    minimal_handdrawn_count = sum(
-        reference["role"] == MINIMAL_HANDDRAWN_ROLE
-        for reference in cleaned_references
-    )
-    if minimal_handdrawn_count and kind not in MINIMAL_HANDDRAWN_KINDS:
-        _fail(
-            "$.references",
-            "minimal-handdrawn-style is only available for cover, "
-            "explainer, or article-illustration",
-        )
-    if minimal_handdrawn_count == 1:
-        _fail(
-            "$.references",
-            "minimal-handdrawn-style requires at least two complete style "
-            "references",
-        )
+    _validate_visual_language_references(brief, kind)
 
     decisions = brief["decisions"]
     if not isinstance(decisions, list) or not 1 <= len(decisions) <= 50:
@@ -585,11 +693,8 @@ def _shared_decisions(brief: dict[str, Any]) -> str:
     )
 
 
-def _uses_minimal_handdrawn(brief: dict[str, Any]) -> bool:
-    return any(
-        reference["role"] == MINIMAL_HANDDRAWN_ROLE
-        for reference in brief["references"]
-    )
+def _uses_visual_language(brief: dict[str, Any], language: str) -> bool:
+    return _selected_visual_language(brief) == language
 
 
 def _minimal_handdrawn_contract() -> str:
@@ -598,6 +703,51 @@ def _minimal_handdrawn_contract() -> str:
 把抽象内容重新翻译成一个动作、一件无需说明就能认出的低技术物件和一个可见结果。整张图是一个连续的物理场景，角色亲自推动因果关系。主体与核心装置合计约占画面 40%–60%，至少保留约 35% 纯白空白。使用细而略有手绘感的黑线和平涂；黑色负责角色与结构，其余 2–3 种强调色各自只负责流动、问题或结果、提示中的一项。表情克制，优先用身体方向和对象反馈表达情绪。短标签贴近对象，能删就删。
 
 不要生成卡片墙、仪表盘、网页界面、嵌套边框、独立小插图拼盘、完整环境、渐变、投影、体积光、写实纹理或无因果作用的装饰图标。"""
+
+
+def _okx_editorial_contract() -> str:
+    return """视觉语言已选择“OKX Editorial”。okx-editorial-style 图片只校准色彩职责、信息层级、留白、字体尺度、界面或物件的材质处理以及品牌标记的克制位置；其中已有的文案、数字、行情、界面、地点、角色、物件和构图都不是当前内容事实，也不能照搬。okx-logo-asset 是必须原样使用的透明品牌标记，不重画、不拼字、不改变方块关系，默认小尺寸放在左上角安全区。
+
+画面以纯黑和深炭灰构成大面积底色，白色承担主标题与核心对象，灰色承担次级说明，#BBFF2F 霓虹黄绿色只标记关键词、关键数字、路径、按钮或少量环境反射。主标题使用超大、紧凑、几何感无衬线字；正文保持短而疏，辅以细分隔线、网格或小标签。采用不对称分屏：一侧给出一句结论，另一侧用角色与一个主要对象证明它；只保留一个视觉中心和一条阅读路径。
+
+根据内容只选择一种主场景：真实界面或产品使用、金属质感的抽象基础设施、黑白摄影与荧光点色、角色驱动的活动场景。没有真实界面资料时不虚构产品截图；不要把四种模式混成元素拼盘。
+
+角色保持主参考图规定的脸、轮廓、比例、服装连接、颜色落点与标志物，并真正进入场景：动作影响主要对象，身体与物体有合理遮挡和接触，透视、景深、颗粒、主光方向、绿色环境反射和落地阴影保持一致。边缘保留自然的明暗过渡与环境染色，不能像白边贴纸或后期抠图。"""
+
+
+def _okx_editorial_task(
+    brief: dict[str, Any],
+    mapping: str,
+    decisions: str,
+    title: str,
+    subtitle: str,
+    labels: str,
+    conclusion: str,
+) -> str:
+    kind_labels = {
+        "profile-banner": "个人或品牌主页横幅",
+        "profile-card": "个人或品牌 IP 资料卡",
+        "cover": "文章封面",
+        "explainer": "社交媒体说明图",
+        "article-illustration": "正文插图",
+    }
+    brief_rule = {
+        "profile-banner": "保留头像、按钮和平台裁切安全区；没有平台资料时给左下角头像区留空。",
+        "profile-card": "名称、定位与角色形成第一视觉层，只保留 2–4 个稳定身份标签。",
+        "cover": "核心对象、角色动作和标题共同表达一项关键变化，标题最多两行。",
+        "explainer": "用选定的单一结构组织 3–5 个节点，位置、大小与绿色路径形成手机端阅读顺序。",
+        "article-illustration": "只解释当前段落最值得图像化的一项关系，文字不是理解所必需时省略。",
+    }
+    return f"""直接生成一张 {brief['composition']['aspect_ratio']} {kind_labels[brief['kind']]}，不输出分析过程。
+
+图片对应关系：
+{mapping}
+
+{decisions}
+
+{_okx_editorial_contract()}
+
+采用“{brief['composition']['structure']}”构图。{brief_rule[brief['kind']]}角色动作、主要对象和可见结果构成唯一视觉中心；前景负责动作接触，中景承载核心信息，背景只提供空间和品牌气氛。主标题准确写为“{title}”；副标题：{subtitle}；必要标签：{labels}；结论：{conclusion}。除这些已确认文字以及内容真源中的必要专有名词、数字外，不添加其它文案或数据。"""
 
 
 def _render_task(brief: dict[str, Any]) -> str:
@@ -609,9 +759,20 @@ def _render_task(brief: dict[str, Any]) -> str:
     conclusion = composition["conclusion"] or "无"
     mapping = _reference_mapping(brief)
     decisions = _shared_decisions(brief)
-    minimal_handdrawn = _uses_minimal_handdrawn(brief)
+    visual_language = _selected_visual_language(brief)
 
-    if kind == "cover" and minimal_handdrawn:
+    if visual_language == "okx-editorial":
+        return _okx_editorial_task(
+            brief,
+            mapping,
+            decisions,
+            title,
+            subtitle,
+            labels,
+            conclusion,
+        )
+
+    if kind == "cover" and visual_language == "minimal-handdrawn":
         return f"""直接生成一张 {composition['aspect_ratio']} 横版极简手绘文章封面，不输出分析过程。
 
 图片对应关系：
@@ -623,7 +784,7 @@ def _render_task(brief: dict[str, Any]) -> str:
 
 只采用一个“{composition['structure']}”核心叙事，让具体核心对象、角色动作、物件状态和标题共同表达同一项变化。主标题准确写为“{title}”，最多两行；副标题：{subtitle}。标题与场景共享留白，不叠加海报边框、装饰层或第二场景。品牌为核心时只保留必要名称、logo 或品牌色，品牌为辅助时把它压到相关对象附近。"""
 
-    if kind == "explainer" and minimal_handdrawn:
+    if kind == "explainer" and visual_language == "minimal-handdrawn":
         return f"""直接生成一张适合手机阅读的 {composition['aspect_ratio']} 极简手绘说明图，不输出分析过程。
 
 图片对应关系：
@@ -635,7 +796,7 @@ def _render_task(brief: dict[str, Any]) -> str:
 
 只采用“{composition['structure']}”这一种关系，把 3–5 个关键节点放在同一个装置、路径或连续互动中，不拆成卡片和模块。主标题准确写为“{title}”，最多两行；节点短标签依次为：{labels}；结论写为“{conclusion}”。角色接收输入、完成关键动作并把可见结果传向下一节点，位置、流向和对象状态本身形成阅读顺序。"""
 
-    if kind == "article-illustration" and minimal_handdrawn:
+    if kind == "article-illustration" and visual_language == "minimal-handdrawn":
         return f"""直接生成一张 {composition['aspect_ratio']} 横版极简手绘正文插图，不输出分析过程。
 
 图片对应关系：
@@ -1419,8 +1580,8 @@ def _article_plan_template(set_id: str, language: str) -> dict[str, Any]:
 
 def _shot_brief(plan: dict[str, Any], shot: dict[str, Any]) -> dict[str, Any]:
     references: list[dict[str, str]] = []
-    if plan["visual_language"] == "minimal-handdrawn":
-        references = _style_reference_manifest("minimal-handdrawn")[
+    if plan["visual_language"] != "default":
+        references = _style_reference_manifest(plan["visual_language"])[
             "brief_references"
         ]
     return {
@@ -1465,8 +1626,10 @@ def _validate_article_plan(data: Any) -> dict[str, Any]:
     brand["visual_cues"] = _text(brand["visual_cues"], "$.brand.visual_cues", optional=True, maximum=3000)
     if brand["role"] == "core" and not brand["name"]:
         raise VisualError("brand name is required when brand role is core")
-    if plan["visual_language"] not in {"default", "minimal-handdrawn"}:
-        raise VisualError("visual_language must be default or minimal-handdrawn")
+    allowed_languages = {"default", *VISUAL_LANGUAGE_PACKS}
+    if plan["visual_language"] not in allowed_languages:
+        allowed = ", ".join(sorted(allowed_languages))
+        raise VisualError(f"visual_language must be one of: {allowed}")
     palette = _text_list(plan["palette"], "$.palette", 2, 5)
     if any(not HEX_COLOR_RE.fullmatch(color) for color in palette):
         raise VisualError("article plan palette must use #RRGGBB colors")
@@ -1744,11 +1907,15 @@ def _schema() -> dict[str, Any]:
             "decision": sorted(DECISION_KEYS),
         },
         "visual_languages": {
-            "minimal-handdrawn": {
-                "available_for": sorted(MINIMAL_HANDDRAWN_KINDS),
-                "reference_role": MINIMAL_HANDDRAWN_ROLE,
-                "reference_count": len(MINIMAL_HANDDRAWN_REFERENCE_FILES),
+            name: {
+                "display_name": pack["display_name"],
+                "available_for": sorted(pack["available_for"]),
+                "reference_roles": sorted(
+                    {reference["role"] for reference in pack["references"]}
+                ),
+                "reference_count": len(pack["references"]),
             }
+            for name, pack in VISUAL_LANGUAGE_PACKS.items()
         },
         "archive_contract": {
             "record_schema_version": RECORD_SCHEMA_VERSION,
@@ -1874,7 +2041,7 @@ def _command_plan_schema(_: argparse.Namespace) -> int:
         "article_fields": sorted(ARTICLE_PLAN_ARTICLE_KEYS),
         "shot_fields": sorted(ARTICLE_PLAN_SHOT_KEYS),
         "structures": sorted(STRUCTURES["article-illustration"]),
-        "visual_languages": ["default", "minimal-handdrawn"],
+        "visual_languages": ["default", *sorted(VISUAL_LANGUAGE_PACKS)],
         "shot_count_rule": "one shot per distinct cognitive anchor; no fixed default count",
     }
     print(json.dumps(result, ensure_ascii=False, indent=2))
@@ -1931,7 +2098,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     style_parser.add_argument(
         "visual_language",
-        choices=["minimal-handdrawn"],
+        choices=sorted(VISUAL_LANGUAGE_PACKS),
     )
     style_parser.set_defaults(handler=_command_style_references)
 

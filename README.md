@@ -86,6 +86,14 @@ $ip-studio 使用 E:\path\to\character-kit，为这篇文章制作一张 5:2 封
 
 请提供角色包路径、要制作的结果，以及正文、品牌资料或其它内容真源。正式图片会归档到角色包的 `derivatives/<类型>/<视觉标识>/`；归档记录可以重新核对角色版本、内容简报、生成输入、参考资料和最终图片。衍生视觉不会反向修改角色身份，也不会自动扩展成未点名的比例或媒体。
 
+IP Studio 会在同一条流程里完成内容提炼、视觉构思、角色融合、提示词、生图、看图检查和归档。仓库当前内置“极简手绘 IP”和“OKX Editorial”两套内容视觉语言。例如：
+
+```text
+$ip-studio 使用 E:\path\to\character-kit，根据下面的定稿做一张 1:1 OKX 风格社交配图，把我的 IP 角色融入画面：……
+```
+
+这类请求会自动加载七张 OKX 视觉案例与透明品牌标记，沿用它们的黑白高对比、霓虹黄绿色、标题层级和材质处理。案例中的旧文案、数字、界面、人物与构图不会成为新图内容；新图仍只使用当前稿件和用户资料中的事实。
+
 ### 制作并安装 Codex 桌宠
 
 ```text
@@ -122,6 +130,9 @@ ip-studio/
 │  ├─ character-system.md
 │  ├─ visual-production.md
 │  └─ pet-production.md
+├─ assets/visual-languages/
+│  ├─ minimal-handdrawn/
+│  └─ okx-editorial/
 └─ scripts/
    ├─ character_kit.py
    ├─ visual_kit.py

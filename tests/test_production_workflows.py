@@ -311,6 +311,40 @@ class ProductionWorkflowTests(unittest.TestCase):
         self.assertEqual(checked_result["record"], finalized_result["record"])
         self.assertTrue(Path(checked_result["image"]).is_file())
 
+    def test_okx_manifest_feeds_the_real_prompt_bundle(self) -> None:
+        command = [sys.executable, str(ROOT / "scripts" / "visual_kit.py")]
+        produced = subprocess.run(
+            [*command, "style-references", "okx-editorial"],
+            check=True,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+        )
+        manifest = json.loads(produced.stdout)
+        brief = completed_brief("okx-cli-chain")
+        brief["brand"] = {
+            "role": "core",
+            "name": "OKX",
+            "visual_cues": "黑白与霓虹黄绿色",
+        }
+        brief["references"] = manifest["brief_references"]
+        brief_path = self._write_json("okx-cli-visual.json", brief)
+
+        consumed = subprocess.run(
+            [*command, "prompt", str(self.kit), "--brief", str(brief_path)],
+            check=True,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+        )
+        bundle = json.loads(consumed.stdout)
+
+        self.assertEqual(len(bundle["image_references"]), 9)
+        self.assertEqual(bundle["image_references"][0]["role"], "approved-character-master")
+        self.assertEqual(bundle["image_references"][-1]["role"], "okx-logo-asset")
+        self.assertIn("OKX Editorial", bundle["prompt"])
+        self.assertIn("不能像白边贴纸或后期抠图", bundle["prompt"])
+
     def test_article_plan_materializes_and_set_consumes_real_visuals(self) -> None:
         plan_path = self._write_json("article-plan.json", article_plan())
         briefs_dir = self.root / "article-briefs"
