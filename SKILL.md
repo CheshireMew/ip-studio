@@ -108,7 +108,7 @@ Agent 根据内容真源完成内容提炼、传播判断、视觉构思和提�
 
 封面、说明图和正文插图可选择 reference 中的“极简手绘 IP”内容视觉；选中后先运行 `python scripts/visual_kit.py style-references minimal-handdrawn`，再把脚本返回的完整案例清单写入 `references`，使视觉语言和实际参考图共同进入生图链。它不是全局默认，也不能借衍生图改写已锁定角色的身份画法。
 
-用户要求“OKX 风格”且当前结果包含已锁定 IP 角色时，选择内置 `okx-editorial`。它适用于主页横幅、资料卡、封面、说明图和正文插图；先运行 `python scripts/visual_kit.py style-references okx-editorial`，把返回的七张风格案例和透明 OKX 标记完整写入 `references`。脚本据此生成黑、白、霓虹黄绿色的品牌编辑视觉合同，自动选择一种主场景，并强制检查角色的共同光线、接触、遮挡、阴影、反射和边缘融合。案例中的旧文案、数字、界面、角色、地点和构图不进入当前内容。
+用户要求“OKX 风格”且当前结果包含已锁定 IP 角色时，把简报的 `visual_language` 设为 `okx-editorial`。它适用于主页横幅、资料卡、封面、说明图和正文插图；运行 `python scripts/visual_kit.py style-profile okx-editorial` 可以直接查看脚本实际读取的 JSON 风格真源。正常生成只把这份 JSON 编译进提示词，不打开或传入七张来源案例；`image_references` 默认只有角色主图和当前任务确实需要的界面或素材。透明 OKX 标记也不自动加载，只有用户明确要求精确 Logo 时才把 `assets/visual-languages/okx-editorial/logos/okx-mark-white.png` 作为当前品牌素材加入。
 
 ### 2. 生成、看图和归档
 

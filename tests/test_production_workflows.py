@@ -311,10 +311,10 @@ class ProductionWorkflowTests(unittest.TestCase):
         self.assertEqual(checked_result["record"], finalized_result["record"])
         self.assertTrue(Path(checked_result["image"]).is_file())
 
-    def test_okx_manifest_feeds_the_real_prompt_bundle(self) -> None:
+    def test_okx_json_profile_feeds_prompt_and_archive_without_style_images(self) -> None:
         command = [sys.executable, str(ROOT / "scripts" / "visual_kit.py")]
         produced = subprocess.run(
-            [*command, "style-references", "okx-editorial"],
+            [*command, "style-profile", "okx-editorial"],
             check=True,
             capture_output=True,
             text=True,
@@ -322,12 +322,12 @@ class ProductionWorkflowTests(unittest.TestCase):
         )
         manifest = json.loads(produced.stdout)
         brief = completed_brief("okx-cli-chain")
+        brief["visual_language"] = "okx-editorial"
         brief["brand"] = {
             "role": "core",
             "name": "OKX",
             "visual_cues": "黑白与霓虹黄绿色",
         }
-        brief["references"] = manifest["brief_references"]
         brief_path = self._write_json("okx-cli-visual.json", brief)
 
         consumed = subprocess.run(
@@ -339,11 +339,26 @@ class ProductionWorkflowTests(unittest.TestCase):
         )
         bundle = json.loads(consumed.stdout)
 
-        self.assertEqual(len(bundle["image_references"]), 9)
+        self.assertEqual(len(bundle["image_references"]), 1)
         self.assertEqual(bundle["image_references"][0]["role"], "approved-character-master")
-        self.assertEqual(bundle["image_references"][-1]["role"], "okx-logo-asset")
+        self.assertEqual(bundle["visual_language"], "okx-editorial")
+        self.assertEqual(
+            bundle["style_profile"]["sha256"],
+            manifest["profile_sha256"],
+        )
         self.assertIn("OKX Editorial", bundle["prompt"])
-        self.assertIn("不能像白边贴纸或后期抠图", bundle["prompt"])
+        self.assertIn('"scene_families"', bundle["prompt"])
+        self.assertNotIn("okx-editorial-style", bundle["prompt"])
+
+        archived = visual_kit._archive_final(self.kit, brief_path, MASTER_IMAGE)
+        checked = visual_kit._check_visual(Path(archived["visual"]), self.kit)
+        record = json.loads(Path(checked["record"]).read_text(encoding="utf-8"))
+        style_record = record["visual_language"]
+        self.assertEqual(style_record["name"], "okx-editorial")
+        self.assertEqual(len(style_record["profile_sha256"]), 64)
+        self.assertTrue(
+            (Path(checked["record"]).parent / style_record["profile_file"]).is_file()
+        )
 
     def test_article_plan_materializes_and_set_consumes_real_visuals(self) -> None:
         plan_path = self._write_json("article-plan.json", article_plan())
@@ -399,6 +414,7 @@ class ProductionWorkflowTests(unittest.TestCase):
         record = json.loads(record_path.read_text(encoding="utf-8"))
         record["record_schema_version"] = visual_kit.LEGACY_RECORD_SCHEMA_VERSION
         record.pop("revision")
+        record.pop("visual_language")
         legacy_inputs = []
         for item in record["generation"]["input_references"]:
             legacy = {

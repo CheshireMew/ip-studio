@@ -43,6 +43,7 @@ TOP_KEYS = {
     "visual_id",
     "kind",
     "language",
+    "visual_language",
     "content",
     "message",
     "brand",
@@ -112,9 +113,32 @@ DEFAULTS = {
     "explainer": ("4:5", "process"),
     "article-illustration": ("16:9", "conceptual-metaphor"),
 }
-VISUAL_LANGUAGE_PACKS: dict[str, dict[str, Any]] = {
+STYLE_PROFILE_SCHEMA_VERSION = "1.0"
+STYLE_PROFILE_TOP_KEYS = {
+    "schema_version",
+    "visual_language",
+    "display_name",
+    "available_for",
+    "prompt",
+}
+STYLE_PROFILE_PROMPT_KEYS = {
+    "palette",
+    "typography",
+    "composition",
+    "scene_families",
+    "character_integration",
+    "logo_policy",
+    "content_boundaries",
+    "quality_checks",
+}
+STYLE_PROFILE_PALETTE_KEYS = {"hex", "role", "usage"}
+STYLE_PROFILE_SCENE_KEYS = {"id", "use_when", "visual_method"}
+STYLE_PROFILE_LOGO_ORDER = ("default", "exact", "placement")
+STYLE_PROFILE_LOGO_KEYS = set(STYLE_PROFILE_LOGO_ORDER)
+VISUAL_LANGUAGES: dict[str, dict[str, Any]] = {
     "minimal-handdrawn": {
         "display_name": "极简手绘 IP",
+        "mode": "reference-pack",
         "available_for": {
             "cover",
             "explainer",
@@ -142,6 +166,7 @@ VISUAL_LANGUAGE_PACKS: dict[str, dict[str, Any]] = {
     },
     "okx-editorial": {
         "display_name": "OKX Editorial",
+        "mode": "prompt-profile",
         "available_for": {
             "profile-banner",
             "profile-card",
@@ -149,48 +174,15 @@ VISUAL_LANGUAGE_PACKS: dict[str, dict[str, Any]] = {
             "explainer",
             "article-illustration",
         },
-        "references": (
-            {
-                "role": "okx-editorial-style",
-                "path": "assets/visual-languages/okx-editorial/examples/01-ai-capex-square.png",
-            },
-            {
-                "role": "okx-editorial-style",
-                "path": "assets/visual-languages/okx-editorial/examples/02-invite-square.png",
-            },
-            {
-                "role": "okx-editorial-style",
-                "path": "assets/visual-languages/okx-editorial/examples/03-ai-infra-landscape.png",
-            },
-            {
-                "role": "okx-editorial-style",
-                "path": "assets/visual-languages/okx-editorial/examples/04-rwa-launch-landscape.png",
-            },
-            {
-                "role": "okx-editorial-style",
-                "path": "assets/visual-languages/okx-editorial/examples/05-web3-night-portrait.png",
-            },
-            {
-                "role": "okx-editorial-style",
-                "path": "assets/visual-languages/okx-editorial/examples/06-mascot-event-square.png",
-            },
-            {
-                "role": "okx-editorial-style",
-                "path": "assets/visual-languages/okx-editorial/examples/07-dragon-boat-square.png",
-            },
-            {
-                "role": "okx-logo-asset",
-                "path": "assets/visual-languages/okx-editorial/logos/okx-mark-white.png",
-            },
-        ),
+        "profile": "assets/visual-languages/okx-editorial/style-profile.json",
         "source_notice": "assets/visual-languages/okx-editorial/SOURCE.md",
         "style_guide": "assets/visual-languages/okx-editorial/STYLE.md",
     },
 }
 BUILT_IN_REFERENCE_ROLES = frozenset(
     reference["role"]
-    for pack in VISUAL_LANGUAGE_PACKS.values()
-    for reference in pack["references"]
+    for language in VISUAL_LANGUAGES.values()
+    for reference in language.get("references", ())
 )
 REVISION_SCOPES = {
     "local-rendering",
@@ -331,15 +323,15 @@ def _resolve_reference(path_text: str, base_dir: Path) -> Path:
 
 
 def _style_reference_manifest(style: str) -> dict[str, Any]:
-    pack = VISUAL_LANGUAGE_PACKS.get(style)
-    if pack is None:
+    language = VISUAL_LANGUAGES.get(style)
+    if language is None or language["mode"] != "reference-pack":
         raise VisualError(f"unsupported visual language: {style}")
     references: list[dict[str, str]] = []
-    for reference in pack["references"]:
+    for reference in language["references"]:
         path = (SKILL_ROOT / reference["path"]).resolve()
         _detect_image(path)
         references.append({"role": reference["role"], "path": str(path)})
-    source_notice = (SKILL_ROOT / pack["source_notice"]).resolve()
+    source_notice = (SKILL_ROOT / language["source_notice"]).resolve()
     if not source_notice.is_file():
         raise VisualError(
             f"missing visual language source notice: {source_notice}"
@@ -350,8 +342,8 @@ def _style_reference_manifest(style: str) -> dict[str, Any]:
         "brief_references": references,
         "source_notice": str(source_notice),
     }
-    if pack.get("style_guide"):
-        style_guide = (SKILL_ROOT / pack["style_guide"]).resolve()
+    if language.get("style_guide"):
+        style_guide = (SKILL_ROOT / language["style_guide"]).resolve()
         if not style_guide.is_file():
             raise VisualError(
                 f"missing visual language style guide: {style_guide}"
@@ -360,16 +352,187 @@ def _style_reference_manifest(style: str) -> dict[str, Any]:
     return result
 
 
+def _validate_style_profile_data(data: Any, style: str) -> dict[str, Any]:
+    language = VISUAL_LANGUAGES.get(style)
+    if language is None or language["mode"] != "prompt-profile":
+        raise VisualError(f"unsupported prompt-profile visual language: {style}")
+    profile = copy.deepcopy(
+        _require_object(data, "$style_profile", STYLE_PROFILE_TOP_KEYS)
+    )
+    if profile["schema_version"] != STYLE_PROFILE_SCHEMA_VERSION:
+        _fail(
+            "$style_profile.schema_version",
+            f"must equal {STYLE_PROFILE_SCHEMA_VERSION}",
+        )
+    profile["visual_language"] = _text(
+        profile["visual_language"],
+        "$style_profile.visual_language",
+        maximum=64,
+    )
+    if profile["visual_language"] != style:
+        _fail(
+            "$style_profile.visual_language",
+            f"must equal {style}",
+        )
+    profile["display_name"] = _text(
+        profile["display_name"],
+        "$style_profile.display_name",
+        maximum=100,
+    )
+    available_for = _text_list(
+        profile["available_for"],
+        "$style_profile.available_for",
+        1,
+        len(KINDS),
+    )
+    if set(available_for) != set(language["available_for"]):
+        _fail(
+            "$style_profile.available_for",
+            "must match the registered visual kinds",
+        )
+    profile["available_for"] = available_for
+
+    prompt = _require_object(
+        profile["prompt"],
+        "$style_profile.prompt",
+        STYLE_PROFILE_PROMPT_KEYS,
+    )
+    palette = prompt["palette"]
+    if not isinstance(palette, list) or not 2 <= len(palette) <= 8:
+        _fail("$style_profile.prompt.palette", "must contain 2-8 colors")
+    cleaned_palette: list[dict[str, str]] = []
+    for index, item in enumerate(palette):
+        color = _require_object(
+            item,
+            f"$style_profile.prompt.palette[{index}]",
+            STYLE_PROFILE_PALETTE_KEYS,
+        )
+        hex_value = _text(
+            color["hex"],
+            f"$style_profile.prompt.palette[{index}].hex",
+            maximum=7,
+        ).upper()
+        if not HEX_COLOR_RE.fullmatch(hex_value):
+            _fail(
+                f"$style_profile.prompt.palette[{index}].hex",
+                "must use #RRGGBB",
+            )
+        cleaned_palette.append(
+            {
+                "hex": hex_value,
+                "role": _text(
+                    color["role"],
+                    f"$style_profile.prompt.palette[{index}].role",
+                    maximum=100,
+                ),
+                "usage": _text(
+                    color["usage"],
+                    f"$style_profile.prompt.palette[{index}].usage",
+                    maximum=500,
+                ),
+            }
+        )
+    prompt["palette"] = cleaned_palette
+    for key in (
+        "typography",
+        "composition",
+        "character_integration",
+        "content_boundaries",
+        "quality_checks",
+    ):
+        prompt[key] = _text_list(
+            prompt[key],
+            f"$style_profile.prompt.{key}",
+            1,
+            12,
+        )
+    scenes = prompt["scene_families"]
+    if not isinstance(scenes, list) or not 1 <= len(scenes) <= 8:
+        _fail("$style_profile.prompt.scene_families", "must contain 1-8 scenes")
+    cleaned_scenes: list[dict[str, str]] = []
+    seen_scene_ids: set[str] = set()
+    for index, item in enumerate(scenes):
+        scene = _require_object(
+            item,
+            f"$style_profile.prompt.scene_families[{index}]",
+            STYLE_PROFILE_SCENE_KEYS,
+        )
+        scene_id = _text(
+            scene["id"],
+            f"$style_profile.prompt.scene_families[{index}].id",
+            maximum=64,
+        )
+        if not VISUAL_ID_RE.fullmatch(scene_id) or scene_id in seen_scene_ids:
+            _fail(
+                f"$style_profile.prompt.scene_families[{index}].id",
+                "must be unique lowercase kebab-case",
+            )
+        seen_scene_ids.add(scene_id)
+        cleaned_scenes.append(
+            {
+                "id": scene_id,
+                "use_when": _text(
+                    scene["use_when"],
+                    f"$style_profile.prompt.scene_families[{index}].use_when",
+                    maximum=500,
+                ),
+                "visual_method": _text(
+                    scene["visual_method"],
+                    f"$style_profile.prompt.scene_families[{index}].visual_method",
+                    maximum=1000,
+                ),
+            }
+        )
+    prompt["scene_families"] = cleaned_scenes
+    logo = _require_object(
+        prompt["logo_policy"],
+        "$style_profile.prompt.logo_policy",
+        STYLE_PROFILE_LOGO_KEYS,
+    )
+    prompt["logo_policy"] = {
+        key: _text(
+            logo[key],
+            f"$style_profile.prompt.logo_policy.{key}",
+            maximum=1000,
+        )
+        for key in STYLE_PROFILE_LOGO_ORDER
+    }
+    profile["prompt"] = prompt
+    return profile
+
+
+def _load_style_profile(style: str) -> tuple[dict[str, Any], Path]:
+    language = VISUAL_LANGUAGES.get(style)
+    if language is None or language["mode"] != "prompt-profile":
+        raise VisualError(f"unsupported prompt-profile visual language: {style}")
+    path = (SKILL_ROOT / language["profile"]).resolve()
+    return _validate_style_profile_data(_load_json(path), style), path
+
+
+def _style_profile_manifest(style: str) -> dict[str, Any]:
+    profile, path = _load_style_profile(style)
+    language = VISUAL_LANGUAGES[style]
+    source_notice = (SKILL_ROOT / language["source_notice"]).resolve()
+    style_guide = (SKILL_ROOT / language["style_guide"]).resolve()
+    for label, source in (
+        ("source notice", source_notice),
+        ("style guide", style_guide),
+    ):
+        if not source.is_file():
+            raise VisualError(f"missing visual language {label}: {source}")
+    return {
+        "status": "PASS",
+        "visual_language": style,
+        "profile": profile,
+        "profile_path": str(path),
+        "profile_sha256": _sha256_file(path),
+        "source_notice": str(source_notice),
+        "style_guide": str(style_guide),
+    }
+
+
 def _selected_visual_language(brief: dict[str, Any]) -> str:
-    roles = {reference["role"] for reference in brief["references"]}
-    selected = [
-        name
-        for name, pack in VISUAL_LANGUAGE_PACKS.items()
-        if roles & {reference["role"] for reference in pack["references"]}
-    ]
-    if len(selected) > 1:
-        raise VisualError("a brief cannot combine multiple built-in visual languages")
-    return selected[0] if selected else "default"
+    return brief["visual_language"]
 
 
 def _validate_visual_language_references(
@@ -379,19 +542,22 @@ def _validate_visual_language_references(
     selected = _selected_visual_language(brief)
     if selected == "default":
         return
-    pack = VISUAL_LANGUAGE_PACKS[selected]
-    if kind not in pack["available_for"]:
-        allowed = ", ".join(sorted(pack["available_for"]))
+    language = VISUAL_LANGUAGES[selected]
+    if kind not in language["available_for"]:
+        allowed = ", ".join(sorted(language["available_for"]))
         _fail(
-            "$.references",
+            "$.visual_language",
             f"{selected} is only available for: {allowed}",
         )
+    if language["mode"] == "prompt-profile":
+        _load_style_profile(selected)
+        return
     expected = {
         (
             reference["role"],
             str((SKILL_ROOT / reference["path"]).resolve()),
         )
-        for reference in pack["references"]
+        for reference in language["references"]
     }
     actual = {
         (reference["role"], reference["path"])
@@ -425,6 +591,8 @@ def _filename_token(value: str) -> str:
 
 
 def _validate_brief(data: Any, base_dir: Path) -> dict[str, Any]:
+    if isinstance(data, dict) and "visual_language" not in data:
+        data = {**data, "visual_language": "default"}
     brief = copy.deepcopy(_require_object(data, "$", TOP_KEYS))
     if brief["schema_version"] != SCHEMA_VERSION:
         _fail("$.schema_version", f"must equal {SCHEMA_VERSION}")
@@ -444,6 +612,15 @@ def _validate_brief(data: Any, base_dir: Path) -> dict[str, Any]:
     brief["language"] = _text(
         brief["language"], "$.language", maximum=32
     )
+    visual_language = _text(
+        brief["visual_language"],
+        "$.visual_language",
+        maximum=64,
+    )
+    if visual_language != "default" and visual_language not in VISUAL_LANGUAGES:
+        allowed = ", ".join(["default", *sorted(VISUAL_LANGUAGES)])
+        _fail("$.visual_language", f"must be one of: {allowed}")
+    brief["visual_language"] = visual_language
 
     content = _require_object(brief["content"], "$.content", CONTENT_KEYS)
     content["source_label"] = _text(
@@ -629,6 +806,7 @@ def _brief_template(kind: str, visual_id: str, language: str) -> dict[str, Any]:
         "visual_id": visual_id,
         "kind": kind,
         "language": language,
+        "visual_language": "default",
         "content": {"source_label": "", "source_text": ""},
         "message": {
             "core_object": "",
@@ -705,14 +883,19 @@ def _minimal_handdrawn_contract() -> str:
 不要生成卡片墙、仪表盘、网页界面、嵌套边框、独立小插图拼盘、完整环境、渐变、投影、体积光、写实纹理或无因果作用的装饰图标。"""
 
 
-def _okx_editorial_contract() -> str:
-    return """视觉语言已选择“OKX Editorial”。okx-editorial-style 图片只校准色彩职责、信息层级、留白、字体尺度、界面或物件的材质处理以及品牌标记的克制位置；其中已有的文案、数字、行情、界面、地点、角色、物件和构图都不是当前内容事实，也不能照搬。okx-logo-asset 是必须原样使用的透明品牌标记，不重画、不拼字、不改变方块关系，默认小尺寸放在左上角安全区。
-
-画面以纯黑和深炭灰构成大面积底色，白色承担主标题与核心对象，灰色承担次级说明，#BBFF2F 霓虹黄绿色只标记关键词、关键数字、路径、按钮或少量环境反射。主标题使用超大、紧凑、几何感无衬线字；正文保持短而疏，辅以细分隔线、网格或小标签。采用不对称分屏：一侧给出一句结论，另一侧用角色与一个主要对象证明它；只保留一个视觉中心和一条阅读路径。
-
-根据内容只选择一种主场景：真实界面或产品使用、金属质感的抽象基础设施、黑白摄影与荧光点色、角色驱动的活动场景。没有真实界面资料时不虚构产品截图；不要把四种模式混成元素拼盘。
-
-角色保持主参考图规定的脸、轮廓、比例、服装连接、颜色落点与标志物，并真正进入场景：动作影响主要对象，身体与物体有合理遮挡和接触，透视、景深、颗粒、主光方向、绿色环境反射和落地阴影保持一致。边缘保留自然的明暗过渡与环境染色，不能像白边贴纸或后期抠图。"""
+def _prompt_profile_contract(style: str) -> str:
+    profile, _ = _load_style_profile(style)
+    prompt_json = json.dumps(
+        profile["prompt"],
+        ensure_ascii=False,
+        indent=2,
+        sort_keys=False,
+    )
+    return (
+        f"视觉语言已选择“{profile['display_name']}”。以下 JSON 是本次唯一的"
+        "品牌视觉真源；直接按字段综合完成画面，不查找或加载风格案例图。\n\n"
+        f"{prompt_json}"
+    )
 
 
 def _okx_editorial_task(
@@ -745,7 +928,7 @@ def _okx_editorial_task(
 
 {decisions}
 
-{_okx_editorial_contract()}
+{_prompt_profile_contract("okx-editorial")}
 
 采用“{brief['composition']['structure']}”构图。{brief_rule[brief['kind']]}角色动作、主要对象和可见结果构成唯一视觉中心；前景负责动作接触，中景承载核心信息，背景只提供空间和品牌气氛。主标题准确写为“{title}”；副标题：{subtitle}；必要标签：{labels}；结论：{conclusion}。除这些已确认文字以及内容真源中的必要专有名词、数字外，不添加其它文案或数据。"""
 
@@ -875,6 +1058,18 @@ def build_visual_bundle(
 ) -> dict[str, Any]:
     brief = _validate_brief(brief_data, base_dir)
     task = _render_task(brief)
+    visual_language = _selected_visual_language(brief)
+    style_profile: dict[str, Any] | None = None
+    if (
+        visual_language != "default"
+        and VISUAL_LANGUAGES[visual_language]["mode"] == "prompt-profile"
+    ):
+        manifest = _style_profile_manifest(visual_language)
+        style_profile = {
+            "path": manifest["profile_path"],
+            "sha256": manifest["profile_sha256"],
+            "profile": manifest["profile"],
+        }
     character = character_kit.build_prompt_bundle(
         kit.resolve(),
         "scene",
@@ -907,6 +1102,8 @@ def build_visual_bundle(
         "status": "PASS",
         "visual_id": brief["visual_id"],
         "kind": brief["kind"],
+        "visual_language": visual_language,
+        "style_profile": style_profile,
         "character_id": character["character_id"],
         "character_revision": character["character_revision"],
         "profile": character["profile"],
@@ -1094,12 +1291,27 @@ def _write_revision(
     (folder / "character-profile.snapshot.json").write_bytes(profile_snapshot)
     prompt_bytes = (str(bundle["prompt"]) + "\n").encode("utf-8")
     (folder / "generation-prompt.txt").write_bytes(prompt_bytes)
+    visual_language_record = {
+        "name": bundle["visual_language"],
+        "profile_file": None,
+        "profile_sha256": None,
+    }
+    if bundle["style_profile"] is not None:
+        style_profile_bytes = _json_bytes(bundle["style_profile"]["profile"])
+        style_profile_file = "visual-language-profile.snapshot.json"
+        (folder / style_profile_file).write_bytes(style_profile_bytes)
+        visual_language_record = {
+            "name": bundle["visual_language"],
+            "profile_file": style_profile_file,
+            "profile_sha256": _sha256_bytes(style_profile_bytes),
+        }
     output_name = f"final{extension}"
     shutil.copyfile(image_path, folder / output_name)
     record = {
         "record_schema_version": RECORD_SCHEMA_VERSION,
         "visual_id": brief["visual_id"],
         "kind": brief["kind"],
+        "visual_language": visual_language_record,
         "created_at": dt.datetime.now(dt.timezone.utc).isoformat(),
         "revision": {
             "label": revision_label,
@@ -1239,13 +1451,24 @@ def _check_visual(
     if not folder.is_dir():
         raise VisualError(f"visual revision does not exist: {folder}")
 
+    record_data = _load_json(folder / "visual-record.json")
+    if isinstance(record_data, dict) and "visual_language" not in record_data:
+        record_data = {
+            **record_data,
+            "visual_language": {
+                "name": "default",
+                "profile_file": None,
+                "profile_sha256": None,
+            },
+        }
     record = _require_object(
-        _load_json(folder / "visual-record.json"),
+        record_data,
         "$record",
         {
             "record_schema_version",
             "visual_id",
             "kind",
+            "visual_language",
             "created_at",
             "revision",
             "character",
@@ -1287,6 +1510,11 @@ def _check_visual(
         },
     )
     brief_record = _require_object(record["brief"], "$record.brief", {"file", "sha256"})
+    visual_language_record = _require_object(
+        record["visual_language"],
+        "$record.visual_language",
+        {"name", "profile_file", "profile_sha256"},
+    )
     generation_record = _require_object(
         record["generation"],
         "$record.generation",
@@ -1312,6 +1540,43 @@ def _check_visual(
         raise VisualError("record and brief identity mismatch")
     if pointer["visual_id"] != record["visual_id"] or pointer["kind"] != record["kind"]:
         raise VisualError("current pointer and record identity mismatch")
+    if visual_language_record["name"] != brief["visual_language"]:
+        raise VisualError("record and brief visual language mismatch")
+    selected_language = brief["visual_language"]
+    uses_prompt_profile = (
+        selected_language != "default"
+        and VISUAL_LANGUAGES[selected_language]["mode"] == "prompt-profile"
+    )
+    if uses_prompt_profile:
+        profile_file = _text(
+            visual_language_record["profile_file"],
+            "$record.visual_language.profile_file",
+            maximum=200,
+        )
+        profile_sha256 = _text(
+            visual_language_record["profile_sha256"],
+            "$record.visual_language.profile_sha256",
+            maximum=64,
+        )
+        if not re.fullmatch(r"[0-9a-f]{64}", profile_sha256):
+            raise VisualError("visual language profile SHA-256 is invalid")
+        style_profile_path = _safe_relative(
+            folder,
+            profile_file,
+            "visual language profile snapshot",
+        )
+        style_profile_bytes = style_profile_path.read_bytes()
+        if _sha256_bytes(style_profile_bytes) != profile_sha256:
+            raise VisualError("visual language profile SHA-256 mismatch")
+        _validate_style_profile_data(
+            _load_json(style_profile_path),
+            selected_language,
+        )
+    elif (
+        visual_language_record["profile_file"] is not None
+        or visual_language_record["profile_sha256"] is not None
+    ):
+        raise VisualError("visual language profile is only valid for prompt-profile modes")
 
     snapshot_path = _safe_relative(folder, character_record["profile_snapshot"], "profile snapshot")
     snapshot_bytes = snapshot_path.read_bytes()
@@ -1477,6 +1742,11 @@ def _migrate_visual(root: Path, kit: Path) -> dict[str, Any]:
     revision_dir = stage / "revisions" / "r001"
     shutil.copytree(root, revision_dir)
     record["record_schema_version"] = RECORD_SCHEMA_VERSION
+    record["visual_language"] = {
+        "name": "default",
+        "profile_file": None,
+        "profile_sha256": None,
+    }
     record["revision"] = {
         "label": "r001",
         "number": 1,
@@ -1580,7 +1850,11 @@ def _article_plan_template(set_id: str, language: str) -> dict[str, Any]:
 
 def _shot_brief(plan: dict[str, Any], shot: dict[str, Any]) -> dict[str, Any]:
     references: list[dict[str, str]] = []
-    if plan["visual_language"] != "default":
+    if (
+        plan["visual_language"] != "default"
+        and VISUAL_LANGUAGES[plan["visual_language"]]["mode"]
+        == "reference-pack"
+    ):
         references = _style_reference_manifest(plan["visual_language"])[
             "brief_references"
         ]
@@ -1589,6 +1863,7 @@ def _shot_brief(plan: dict[str, Any], shot: dict[str, Any]) -> dict[str, Any]:
         "visual_id": shot["visual_id"],
         "kind": "article-illustration",
         "language": plan["language"],
+        "visual_language": plan["visual_language"],
         "content": copy.deepcopy(plan["article"]),
         "message": copy.deepcopy(shot["message"]),
         "brand": copy.deepcopy(plan["brand"]),
@@ -1626,7 +1901,7 @@ def _validate_article_plan(data: Any) -> dict[str, Any]:
     brand["visual_cues"] = _text(brand["visual_cues"], "$.brand.visual_cues", optional=True, maximum=3000)
     if brand["role"] == "core" and not brand["name"]:
         raise VisualError("brand name is required when brand role is core")
-    allowed_languages = {"default", *VISUAL_LANGUAGE_PACKS}
+    allowed_languages = {"default", *VISUAL_LANGUAGES}
     if plan["visual_language"] not in allowed_languages:
         allowed = ", ".join(sorted(allowed_languages))
         raise VisualError(f"visual_language must be one of: {allowed}")
@@ -1724,6 +1999,7 @@ def _assert_visual_matches_shot(
         "visual_id",
         "kind",
         "language",
+        "visual_language",
         "content",
         "message",
         "brand",
@@ -1908,14 +2184,19 @@ def _schema() -> dict[str, Any]:
         },
         "visual_languages": {
             name: {
-                "display_name": pack["display_name"],
-                "available_for": sorted(pack["available_for"]),
+                "display_name": language["display_name"],
+                "mode": language["mode"],
+                "available_for": sorted(language["available_for"]),
                 "reference_roles": sorted(
-                    {reference["role"] for reference in pack["references"]}
+                    {
+                        reference["role"]
+                        for reference in language.get("references", ())
+                    }
                 ),
-                "reference_count": len(pack["references"]),
+                "reference_count": len(language.get("references", ())),
+                "profile": language.get("profile"),
             }
-            for name, pack in VISUAL_LANGUAGE_PACKS.items()
+            for name, language in VISUAL_LANGUAGES.items()
         },
         "archive_contract": {
             "record_schema_version": RECORD_SCHEMA_VERSION,
@@ -1936,6 +2217,17 @@ def _command_style_references(args: argparse.Namespace) -> int:
     print(
         json.dumps(
             _style_reference_manifest(args.visual_language),
+            ensure_ascii=False,
+            indent=2,
+        )
+    )
+    return 0
+
+
+def _command_style_profile(args: argparse.Namespace) -> int:
+    print(
+        json.dumps(
+            _style_profile_manifest(args.visual_language),
             ensure_ascii=False,
             indent=2,
         )
@@ -2041,7 +2333,7 @@ def _command_plan_schema(_: argparse.Namespace) -> int:
         "article_fields": sorted(ARTICLE_PLAN_ARTICLE_KEYS),
         "shot_fields": sorted(ARTICLE_PLAN_SHOT_KEYS),
         "structures": sorted(STRUCTURES["article-illustration"]),
-        "visual_languages": ["default", *sorted(VISUAL_LANGUAGE_PACKS)],
+        "visual_languages": ["default", *sorted(VISUAL_LANGUAGES)],
         "shot_count_rule": "one shot per distinct cognitive anchor; no fixed default count",
     }
     print(json.dumps(result, ensure_ascii=False, indent=2))
@@ -2098,9 +2390,27 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     style_parser.add_argument(
         "visual_language",
-        choices=sorted(VISUAL_LANGUAGE_PACKS),
+        choices=sorted(
+            name
+            for name, language in VISUAL_LANGUAGES.items()
+            if language["mode"] == "reference-pack"
+        ),
     )
     style_parser.set_defaults(handler=_command_style_references)
+
+    profile_parser = subparsers.add_parser(
+        "style-profile",
+        help="Print the JSON prompt profile for a built-in visual language.",
+    )
+    profile_parser.add_argument(
+        "visual_language",
+        choices=sorted(
+            name
+            for name, language in VISUAL_LANGUAGES.items()
+            if language["mode"] == "prompt-profile"
+        ),
+    )
+    profile_parser.set_defaults(handler=_command_style_profile)
 
     draft_parser = subparsers.add_parser(
         "draft", help="Create a non-destructive visual brief draft."
