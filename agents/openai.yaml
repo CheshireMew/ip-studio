@@ -1,4 +1,4 @@
 interface:
   display_name: "IP Studio"
-  short_description: "锁定 IP 角色，完成品牌内容视觉、文章配图与 Codex 桌宠"
-  default_prompt: "使用 $ip-studio 创建或读取已锁定的 IP 角色，并直接完成内容提炼、视觉构思、角色融合、提示词、生图、检查与归档；用户点名 OKX 风格时使用内置 okx-editorial 视觉语言。"
+  short_description: "锁定 IP 角色，制作内容视觉、运行时 2D 动态与 Codex 桌宠"
+  default_prompt: "使用 $ip-studio 创建或读取已锁定的 IP 角色，并完成用户点名的内容视觉或离散状态式 2D 动态素材；动态任务先读取真实状态生产者和消费者，再生成透明帧、图集与 manifest。"

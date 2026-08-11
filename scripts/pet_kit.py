@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Prepare, advance, package, install, and verify IP Studio Codex pet runs."""
+"""Run the fixed Codex v2 adapter on IP Studio's shared motion contract."""
 
 from __future__ import annotations
 
@@ -18,10 +18,11 @@ from pathlib import Path
 from typing import Any
 
 import character_kit
+import motion_kit
 
 
-SCHEMA_VERSION = "1.0"
-RECORD_SCHEMA_VERSION = "1.0"
+SCHEMA_VERSION = "2.0"
+RECORD_SCHEMA_VERSION = "2.0"
 PET_ID_RE = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$")
 PET_SCRIPTS = Path(__file__).resolve().parent / "pet"
 EXPECTED_JOB_IDS = (
@@ -408,6 +409,12 @@ def _prepare(args: argparse.Namespace) -> dict[str, Any]:
                 .relative_to(stage.resolve())
             ).replace("\\", "/"),
         }
+        motion_contract = motion_kit.build_codex_pet_contract(display_name)
+        _atomic_write(stage / "motion-contract.json", _json_bytes(motion_contract))
+        request["motion_contract"] = {
+            "path": "motion-contract.json",
+            "sha256": motion_kit.contract_digest(motion_contract),
+        }
         _atomic_write(request_path, _json_bytes(request))
 
         record = {
@@ -417,6 +424,7 @@ def _prepare(args: argparse.Namespace) -> dict[str, Any]:
             "pet_id": pet_id,
             "display_name": display_name,
             "source_character": copy.deepcopy(request["source_character"]),
+            "motion_contract": copy.deepcopy(request["motion_contract"]),
             "package": None,
             "installation": None,
         }
@@ -428,6 +436,7 @@ def _prepare(args: argparse.Namespace) -> dict[str, Any]:
             stage / "pet_request.json",
             stage / "imagegen-jobs.json",
             stage / "pet-run-record.json",
+            stage / "motion-contract.json",
         ):
             data = _rewrite_stage_paths(
                 _load_json(json_path),
@@ -538,6 +547,26 @@ def _check_source_character(run: Path, request: dict[str, Any]) -> dict[str, Any
     return source
 
 
+def _check_motion_contract(run: Path, request: dict[str, Any]) -> dict[str, Any]:
+    metadata = request.get("motion_contract")
+    if not isinstance(metadata, dict) or set(metadata) != {"path", "sha256"}:
+        raise PetError("pet_request.json motion_contract fields do not match the contract")
+    path = _safe_path(run, metadata["path"], "motion contract")
+    contract = motion_kit.validate_contract(_load_json(path))
+    if motion_kit.contract_digest(contract) != metadata["sha256"]:
+        raise PetError("normalized motion contract SHA-256 mismatch")
+    if contract["motion_id"] != "codex-pet-v2":
+        raise PetError("Codex pet motion contract must use codex-pet-v2")
+    clip_ids = [clip["id"] for clip in contract["clips"]]
+    look_ids = [f"look-{degrees.replace('.', '-')}" for degrees, _name in LOOK_DIRECTIONS]
+    if clip_ids != [*STANDARD_STATES, *look_ids]:
+        raise PetError("Codex pet motion clips do not match the v2 adapter")
+    group_ids = [group["id"] for group in contract["groups"]]
+    if group_ids != [*STANDARD_STATES, "look-row-9", "look-row-10"]:
+        raise PetError("Codex pet motion groups do not match the v2 adapter")
+    return metadata
+
+
 def _check_prepared(run: Path) -> dict[str, Any]:
     run = run.expanduser().resolve()
     if not run.is_dir():
@@ -558,6 +587,7 @@ def _check_prepared(run: Path) -> dict[str, Any]:
     ) != (8, 11, 192, 208, 1536, 2288):
         raise PetError("pet request atlas contract must be 8x11 at 192x208")
     source = _check_source_character(run, request)
+    motion_contract = _check_motion_contract(run, request)
 
     manifest = _load_json(run / "imagegen-jobs.json")
     jobs = _job_map(manifest)
@@ -584,6 +614,8 @@ def _check_prepared(run: Path) -> dict[str, Any]:
         raise PetError("pet run record and request pet_id mismatch")
     if record.get("source_character") != source:
         raise PetError("pet run record source_character mismatch")
+    if record.get("motion_contract") != motion_contract:
+        raise PetError("pet run record motion_contract mismatch")
 
     ready = [
         job_id
@@ -599,6 +631,9 @@ def _check_prepared(run: Path) -> dict[str, Any]:
         "display_name": request["display_name"],
         "character_id": source["character_id"],
         "character_revision": source["revision"],
+        "motion_contract": str(
+            _safe_path(run, motion_contract["path"], "motion contract")
+        ),
         "completed_jobs": [
             job_id for job_id, job in jobs.items() if job.get("status") == "complete"
         ],
@@ -1141,6 +1176,7 @@ def _finalize(run: Path) -> dict[str, Any]:
         "record_schema_version": RECORD_SCHEMA_VERSION,
         "pet_id": pet_id,
         "source_character": request["source_character"],
+        "motion_contract": request["motion_contract"],
         "sprite_version_number": 2,
         "spritesheet": "spritesheet.webp",
         "spritesheet_sha256": _sha256(package / "spritesheet.webp"),
@@ -1165,6 +1201,7 @@ def _finalize(run: Path) -> dict[str, Any]:
         "run": str(run),
         "character_id": request["source_character"]["character_id"],
         "character_revision": request["source_character"]["revision"],
+        "motion_contract": str(run / request["motion_contract"]["path"]),
         "spritesheet": completion["atlas"],
         "spritesheet_sha256": completion["atlas_sha256"],
         "package": str(package),
@@ -1198,6 +1235,8 @@ def _check_final(run: Path) -> dict[str, Any]:
     package_record = _load_json(run / "pet-package-record.json")
     if package_record.get("source_character") != request["source_character"]:
         raise PetError("pet package source character record mismatch")
+    if package_record.get("motion_contract") != request["motion_contract"]:
+        raise PetError("pet package motion contract record mismatch")
     if package_record.get("spritesheet_sha256") != _sha256(packaged_sheet):
         raise PetError("pet package spritesheet SHA-256 mismatch")
 
@@ -1307,6 +1346,11 @@ def _schema() -> dict[str, Any]:
             "height": 2288,
         },
         "visual_jobs": list(EXPECTED_JOB_IDS),
+        "normalized_motion_contract": {
+            "schema_version": motion_kit.SCHEMA_VERSION,
+            "motion_id": "codex-pet-v2",
+            "role": "fixed Codex platform adapter",
+        },
         "look_directions": [
             {"degrees": degrees, "expected": expected}
             for degrees, expected in LOOK_DIRECTIONS

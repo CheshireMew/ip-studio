@@ -1,11 +1,11 @@
 ---
 name: ip-studio
-description: "创建、锁定并长期复用个人或品牌 IP 角色，并用同一角色实际制作头像、主页横幅、资料卡、文章封面、说明图、整篇文章配图和 Codex v2 桌宠；环境没有生图能力时才回退为完整提示词包。Use when a user wants to turn identity cues or existing art into a stable stylized human, animal, anthropomorphic, object, or fantasy character; import or revise a portable character kit; use that locked character in social-profile and content visuals; plan and produce an ordered article illustration set; revise a derivative without overwriting history; or build a Codex-compatible 8x11 animated pet with nine app states and sixteen look directions. Do not use for general personal-brand strategy, generic visuals without an IP character, photorealistic digital doubles, general animation, Live2D, video, or non-Codex desktop-pet applications."
+description: "创建、锁定并长期复用个人或品牌 IP 角色，并用同一角色实际制作头像、主页横幅、资料卡、文章视觉、离散状态式 2D 动态角色素材和 Codex v2 桌宠；环境没有生图能力时才回退为完整提示词包。Use when a user wants to turn identity cues or existing art into a stable stylized character kit; use that locked character in social or content visuals; produce runtime-grounded static poses, directional clips, state loops, one-shot actions, transitions, sprite atlases, or interface-character motion; or build a Codex-compatible v2 pet as one fixed platform adapter. Do not use for generic visuals without an IP character, photorealistic digital doubles, general motion graphics, skeletal animation, Live2D, video, or 3D."
 ---
 
 # IP Studio
 
-把身份线索或已有角色图变成可跨会话复用的角色包，再用同一身份制作社交视觉、内容视觉和 Codex v2 桌宠。角色档案与其中登记的单张主参考图是身份真源；衍生图和桌宠只消费它们，不反向改变角色。
+把身份线索或已有角色图变成可跨会话复用的角色包，再用同一身份制作社交视觉、内容视觉和离散状态式 2D 动态角色。角色档案与其中登记的单张主参考图是身份真源；衍生图和动态素材只消费它们，不反向改变角色。
 
 ## 路由与边界
 
@@ -13,21 +13,22 @@ description: "创建、锁定并长期复用个人或品牌 IP 角色，并用�
 
 - **角色身份**：从零创建、导入已有形象，或修改已锁定角色。
 - **衍生视觉**：头像、主页横幅、资料卡、文章封面、说明图、单张正文插图、整篇文章配图组或既有衍生图修订。只有图片而没有角色包时，先导入并锁定；没有角色时，先完成角色身份路径。
-- **Codex 桌宠**：用已锁定角色制作、检查和安装 v2 桌宠。只有图片或还没有角色时，同样先完成角色身份路径。
+- **动态角色素材**：从真实运行环境反推静态姿势、方向、循环、单次动作、过渡、命中事件、锚点与导出格式，再用已锁定角色制作完整动作表、透明帧、图集和无损预览。游戏小人、应用助手、网页角色和状态式吉祥物走此路径。
+- **Codex 桌宠**：动态角色素材的固定平台适配器。它继续输出九组应用状态、十六个注视方向和 Codex v2 8×11 图集，并在用户要求可用或安装时写入本机 Codex。
 
-同一请求包含多个结果时，先锁定角色，再分别完成点名的结果。普通个人品牌策划、没有 IP 角色参与的一般视觉、照片级数字分身、Live2D、视频、通用动画、Windows 独立桌宠和其它桌宠平台不属于本 Skill。用户只点名 `$ip-studio` 时，按从零创建角色处理。
+同一请求包含多个结果时，先锁定角色，再分别完成点名的结果。普通个人品牌策划、没有 IP 角色参与的一般视觉、照片级数字分身、一般动效、骨骼动画、Live2D、视频和 3D 不属于本 Skill。其它桌宠或角色平台只有在能由离散状态、方向和逐帧 2D 素材完整表达时才进入动态角色路径；安装协议另行确认。用户只点名 `$ip-studio` 时，按从零创建角色处理。
 
 ## 通用决策与权限
 
 信息依次取自当前请求、当前对话、用户提供或明确指向的图片、文档、链接和角色目录。材料足够时直接继续；只有缺失信息会改变身份、事实、品牌方向、核心叙事或既有安装时，才提出一个具体取舍。角色方向不清时给三张完整方向卡，不发问卷；用户把决定交给 Agent 时选择最符合用途的一张并说明原因。除非用户明确要求为只有品牌名的请求补充公开线索，否则不主动研究品牌。
 
-调用本 Skill 已授权查看用户提供的图片、使用现有生图与看图能力，并在可写工作区创建角色包、衍生视觉和桌宠运行目录。请求“可用的 Codex 桌宠”包含写入本机 Codex 宠物目录；不同内容占用同一标识时，先保留旧目录并请求替换决定。其它安装、上传、发送或发布必须另行获得授权。本流程不删除既有角色版本、正式衍生图、桌宠运行记录或旧安装。
+调用本 Skill 已授权查看用户提供的图片、项目中与角色状态生产和消费直接相关的代码与素材合同、使用现有生图与看图能力，并在可写工作区创建角色包、衍生视觉和动态运行目录。请求“可用的 Codex 桌宠”包含写入本机 Codex 宠物目录；不同内容占用同一标识时，先保留旧目录并请求替换决定。其它运行时接入、安装、上传、发送或发布必须由请求明确包含。本流程不删除既有角色版本、正式衍生图、动态运行记录或旧安装。
 
 回复语言跟随用户。内部档案使用固定英文键名，用户不需要编辑 JSON、提示词、文件名、编号或分支。
 
 ### 图像能力分流
 
-当前路径需要位图成品时只选择一次图像入口。用户明确只要方案或提示词时按其要求停止；否则，Codex 环境存在 `$imagegen` 时在第一次生图前完整读取并直接调用它，其它 Agent 使用自身原生生图或编辑能力。具有生图能力就必须继续到实际生成、看图、必要重试和归档，不能把提示词当成成品；只有环境确实没有生图能力时才交付脚本生成的完整提示词和有序图片输入。后续角色、衍生视觉和桌宠路径都消费这个已选择的入口，不各自重新判断 provider。
+当前路径需要位图成品时只选择一次图像入口。用户明确只要方案或提示词时按其要求停止；否则，Codex 环境存在 `$imagegen` 时在第一次生图前完整读取并直接调用它，其它 Agent 使用自身原生生图或编辑能力。具有生图能力就必须继续到实际生成、看图、必要重试和归档，不能把提示词当成成品；只有环境确实没有生图能力时才交付脚本生成的完整提示词和有序图片输入。后续角色、衍生视觉、动态角色和桌宠路径都消费这个已选择的入口，不各自重新判断 provider。
 
 有生图但没有独立看图能力时可以交付候选，不能声称视觉检查或最终定稿通过；有看图能力时必须实际打开生产者输出，不用文字描述或消费端假数据代替图片。
 
@@ -129,9 +130,51 @@ python scripts/visual_kit.py check <visual-folder> --kit <kit-folder>
 
 修订时先按 reference 判定 `local-rendering`、`content-structure` 或 `character-revision`，运行 `revision-prompt` 并把上一版成图作为正式输入，再用 `revise` 创建下一 revision；不覆盖旧图，也不换一个失去来源关系的新 visual-id。旧的平铺衍生目录只能显式运行一次 `migrate-visual`，迁移后正常路径不再读取旧结构。文章全部单图通过后运行 `finalize-set` 与 `check-set`，归档其正文顺序和所消费的精确 visual revisions。
 
-## Codex 桌宠主路径
+## 动态角色素材主路径
 
-本路径只消费锁定角色。完整读取 `references/pet-production.md`；它是 v2 精灵表合同、九组状态、十六方向、逐行生图、确定性拼装、盲审、预览、成品和安装的执行真源。先建立“准备运行目录 → 桌宠主形象 → 动作与方向 → 拼装验证和安装”四步可见进度，只有真实文件或决定出现后才推进。
+本路径只消费锁定角色。完整读取 `references/dynamic-character-production.md`；它负责从目标运行环境确定动作合同、整表生图、透明处理、逐帧检查、图集、无损预览和真实消费验证。动态只表示角色由有限状态、方向和逐帧图片驱动，不把视频、Live2D、骨骼或 3D 工作流带进来。
+
+### 1. 先确定运行时真正会消费什么
+
+目标项目存在时，读取角色状态的生产者、方向选择、动作结果发生位置、图片消费者、锚点、图集导入和最终可见结果。目标平台只有说明而没有代码时，依据正式协议建立同一合同。不要从常见动画清单倒推动作：日程 NPC 可以只要四方向静态图；玩家角色只生产当前控制器能触发的移动和工具动作；前向应用助手没有方向输入时不生成四方向；转向只有在运行时存在独立过渡时才是动画。
+
+用 Agent 根据真实证据完成合同，用户不需要编辑 JSON：
+
+```text
+python scripts/motion_kit.py schema
+python scripts/motion_kit.py draft --motion-id <slug> --display-name <name> --output <contract-path>
+python scripts/motion_kit.py prepare <kit-folder> --contract <contract-path>
+python scripts/motion_kit.py check <run-folder> --stage prepared
+```
+
+合同逐项记录目标表面、角色职责、镜头、状态与方向生产者、运行时消费者、用户可见结果、画布与脚底锚点，以及每个 `static`、`loop`、`oneshot` 或 `transition` clip 的方向、帧时长和效果发生帧。每帧只能由一个完整动作表格子产生；所有 clip 帧都必须被映射，不能留下消费端临时猜测的素材。
+
+### 2. 整张生成并接受动作组
+
+运行 `motion_kit.py ready <run-folder>`，只处理返回的 `ready_jobs`。每个 job 使用登记的角色主图、固定网格辅助图和提示词，在一张图片中直接生成该动作组的全部方向与帧；网格只控制位置，成图不能出现格线、标签或文字。不要按方向或单帧分别生图再拼接，也不要把另一张图的脸、眼睛、头发、服装或肢体贴进完整帧。直生图的轻微内部晃动可以保留；确定性处理只允许整人刚性位移、统一缩放、脚底对齐、软抠图和切格，不替换人物内部像素。
+
+实际打开整表，确认同一角色、完整身体、方向、动作顺序、帧数、尺度、基线、工具连接和背景后运行：
+
+```text
+python scripts/motion_kit.py accept-sheet <run-folder> --job <group-id> --source <generated-sheet> --qa-note <visible-evidence>
+```
+
+脚本输出透明 PNG 图集、每个 clip 的透明 PNG 帧、APNG、无损 WebP 和处理报告。APNG 或无损 WebP承担颜色与循环验收；GIF 只有用户明确要临时分享时另行转换，不进入正式包，不承担颜色判断。错误整帧或整组重生；已接受结果后来被否决时增加 `--replace-complete`，旧组进入历史，不混入新包。
+
+### 3. 打包并验证真实消费
+
+全部动作组通过后运行：
+
+```text
+python scripts/motion_kit.py finalize <run-folder>
+python scripts/motion_kit.py check <run-folder> --stage final
+```
+
+正式包包含 `motion-contract.json`、`motion-manifest.json`、透明图集和逐帧 PNG；预览与生成证据留在运行目录。若请求包含项目接入，继续让真实状态生产者选择 manifest 中的 clip，让方向输入切换对应方向，并让效果事件在登记帧通知玩法系统；再在实际目标尺寸中查看最终角色。只有生产者确实发出状态、正式素材被导入、消费者确实读取、动作效果与画面同步且用户能看见，才说运行时接入完成。只要求素材包时不擅自修改项目。
+
+## Codex 桌宠适配路径
+
+本路径只消费锁定角色。先读取 `references/dynamic-character-production.md` 的共同身份、整表生成、预览和修正规则，再完整读取 `references/pet-production.md`；后者只负责 Codex v2 的固定九状态、十六方向、8×11 布局、盲审、成品和安装。先建立“准备运行目录 → 桌宠主形象 → 动作与方向 → 拼装验证和安装”四步可见进度，只有真实文件或决定出现后才推进。
 
 先加载工作区依赖并始终使用其返回的 Python 绝对路径：
 
@@ -161,12 +204,12 @@ python scripts/visual_kit.py check <visual-folder> --kit <kit-folder>
 
 ## 能力缺失
 
-没有生图能力时仍完成当前路径的结构化生产输入：角色路径交付完整档案和 master prompt；衍生路径交付视觉简报或文章配图计划、有序参考和 prompt；桌宠路径完成 `prepare` 并交付运行目录、任务图和第一条基础图提示。明确说明哪些图片、修订、配图组、归档或安装尚未完成。
+没有生图能力时仍完成当前路径的结构化生产输入：角色路径交付完整档案和 master prompt；衍生路径交付视觉简报或文章配图计划、有序参考和 prompt；动态路径完成真实动作合同与 `prepare`，交付运行目录、任务图和完整动作表提示；桌宠同样完成平台合同与准备目录。明确说明哪些图片、透明处理、运行时包、归档或安装尚未完成。
 
-没有独立看图能力时，不声称角色一致性、视觉成片或桌宠盲审通过；只交付已有确定性检查和需要用户查看的总览。没有可写工作区时，聊天图片不冒充可携带角色包或可验证衍生目录。
+没有独立看图能力时，不声称角色一致性、视觉成片、动态连续性或桌宠盲审通过；只交付已有确定性检查和需要用户查看的总览。没有可写工作区时，聊天图片不冒充可携带角色包、可验证衍生目录或运行时动作包。
 
 ## 交付与停止
 
-先说明当前结果是否真正完成。角色完成时展示正式主图并给出核心记忆点、版本和角色包绝对路径；衍生视觉先展示最终图片，再说明核心关系、角色版本和绝对路径；桌宠展示最终总览和至少一个动作预览，再说明安装状态、角色版本、九组状态、十六方向、成品与安装路径。
+先说明当前结果是否真正完成。角色完成时展示正式主图并给出核心记忆点、版本和角色包绝对路径；衍生视觉先展示最终图片，再说明核心关系、角色版本和绝对路径；一般动态角色展示整表总览和实际 clip 预览，再说明角色版本、合同依据、动作与方向、效果事件和成品路径；桌宠展示最终总览和至少一个动作预览，再说明安装状态、角色版本、九组状态、十六方向、成品与安装路径。
 
-只有真实生产者输出已生成、下游已读取、最终图片或桌宠已实际检查，且对应 `check` 通过，才能声称完成。满足用户当前请求后停止，不自动扩展其它比例、媒体、表情包、动画或平台版本。
+只有真实生产者输出已生成、下游已读取、最终图片或动态素材已实际检查，且对应 `check` 通过，才能声称素材完成；项目接入还必须看到真实运行时消费者产生可观察结果。满足用户当前请求后停止，不自动扩展其它比例、媒体、动作、表情包或平台版本。
