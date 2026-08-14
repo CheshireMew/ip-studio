@@ -13,6 +13,8 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw
 
+IP_STUDIO_ROOT = Path(__file__).resolve().parents[2]
+
 ATLAS = {"columns": 8, "rows": 11, "cell_width": 192, "cell_height": 208}
 ATLAS["width"] = ATLAS["columns"] * ATLAS["cell_width"]
 ATLAS["height"] = ATLAS["rows"] * ATLAS["cell_height"]
@@ -286,7 +288,13 @@ def infer_pet_notes(args: argparse.Namespace, reference_paths: list[Path]) -> st
 
 def default_output_dir(pet_id: str) -> Path:
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    return Path.cwd() / "output" / "hatch-pet" / f"{pet_id}-{timestamp}"
+    return (
+        IP_STUDIO_ROOT
+        / "ip-studio-output"
+        / "_work"
+        / "codex-pet"
+        / f"{pet_id}-{timestamp}"
+    )
 
 
 def rel(path: Path, root: Path) -> str:
@@ -810,6 +818,7 @@ def make_jobs(
             "id": "base",
             "kind": "base-pet",
             "status": "pending",
+            "requires_user_confirmation": True,
             "prompt_file": "prompts/base-pet.md",
             "input_images": reference_inputs,
             "output_path": "decoded/base.png",
@@ -848,6 +857,7 @@ def make_jobs(
                 "id": state,
                 "kind": "row-strip",
                 "status": "pending",
+                "requires_user_confirmation": True,
                 "prompt_file": f"prompts/rows/{state}.md",
                 "retry_prompt_file": f"prompts/row-retries/{state}.md",
                 "input_images": [
@@ -879,6 +889,7 @@ def make_jobs(
             "id": "look-cardinals",
             "kind": "look-cardinal-strip",
             "status": "pending",
+            "requires_user_confirmation": True,
             "prompt_file": "prompts/look-cardinals.md",
             "repair_prompt_files": {
                 label: f"prompts/look-anchor-repairs/{label}.md"
@@ -936,6 +947,7 @@ def make_jobs(
                 "id": state,
                 "kind": "look-row-strip",
                 "status": "pending",
+                "requires_user_confirmation": True,
                 "prompt_file": f"prompts/rows/{state}.md",
                 "retry_prompt_file": f"prompts/row-retries/{state}.md",
                 "input_images": [

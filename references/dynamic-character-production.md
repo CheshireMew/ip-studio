@@ -59,7 +59,7 @@ python scripts/motion_kit.py check <run-folder> --stage prepared
 python scripts/motion_kit.py ready <run-folder>
 ```
 
-`prepare` 验证角色包和合同，把角色档案、主参考图与合同快照写入运行目录，并为每个 group 生成提示词、固定网格辅助图和有序图片输入。运行目录位于：
+`prepare` 验证角色包和合同，把角色档案、主参考图与合同快照写入运行目录，并为每个 group 生成提示词、固定网格辅助图和有序图片输入。每个 job 都标记 `requires_user_confirmation: true`；运行 `ready` 后读取本批实际提示词和全部图片输入，完整展示给用户并停止。只有用户确认后，下一轮才原样生成；重试提示词同样重新确认。运行目录位于：
 
 ```text
 <character-kit>/derivatives/motion/<motion-id>/runs/rNNN/
@@ -69,7 +69,7 @@ python scripts/motion_kit.py ready <run-folder>
 
 ## 4. 整表直生图
 
-每个 group 只接受一张包含全部规定格子的完整结果。生成时锁定：
+每个 group 只接受一张包含全部规定格子的完整结果。这里的方向、格数、动作阶段、幕布和运行时语义属于真实消费者要求，可以进入提示词；完整角色档案、用途解释和与当前 group 无关的状态不得进入。获确认后生成时锁定：
 
 - 同一脸型、头身比、身体结构、服装层级、配色与固定配饰；
 - 同一镜头和表观尺度；

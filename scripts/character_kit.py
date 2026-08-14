@@ -19,6 +19,8 @@ from typing import Any
 
 SCHEMA_VERSION = "2.0"
 CALIBRATION_SCHEMA_VERSION = "1.0"
+REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
+OUTPUT_ROOT = REPOSITORY_ROOT / "ip-studio-output"
 CALIBRATION_KINDS = {"turnaround", "action", "hands", "accessory"}
 CHARACTER_ID_RE = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$")
 REFERENCE_ID_RE = re.compile(r"^[a-z][a-z0-9-]{0,31}$")
@@ -154,6 +156,73 @@ RENDERING_KEYS = {
 CONSISTENCY_KEYS = {"fixed", "flexible", "revision_required"}
 PROVENANCE_KEYS = {"decisions"}
 DECISION_KEYS = {"path", "source", "note"}
+
+
+def _workspace_paths(character_id: str = "") -> dict[str, str]:
+    """Return output paths anchored to this IP Studio repository, never the CWD."""
+
+    result = {
+        "status": "PASS",
+        "repository_root": str(REPOSITORY_ROOT),
+        "output_root": str(OUTPUT_ROOT),
+    }
+    if character_id:
+        if not CHARACTER_ID_RE.fullmatch(character_id):
+            raise ProfileError(
+                "character-id must be lowercase letters, digits, or internal hyphens"
+            )
+        result.update(
+            {
+                "character_kit": str(OUTPUT_ROOT / character_id),
+                "work_area": str(OUTPUT_ROOT / "_work" / character_id),
+            }
+        )
+    return result
+
+
+def _resolve_character(name_or_id: str) -> dict[str, str]:
+    """Resolve one locked character by its canonical id or display name."""
+
+    query = name_or_id.strip()
+    if not query:
+        raise ProfileError("character name or id must not be empty")
+
+    matches: list[tuple[Path, dict[str, Any]]] = []
+    if OUTPUT_ROOT.is_dir():
+        for kit in sorted(OUTPUT_ROOT.iterdir(), key=lambda path: path.name):
+            if not kit.is_dir() or kit.name == "_work":
+                continue
+            profile_path = kit / "character-profile.json"
+            if not profile_path.is_file():
+                continue
+            profile = _load_json(profile_path)
+            character_id = str(profile.get("character_id", "")).strip()
+            display_name = str(profile.get("display_name", "")).strip()
+            if query.casefold() in {
+                character_id.casefold(),
+                display_name.casefold(),
+            }:
+                matches.append((kit, profile))
+
+    if not matches:
+        raise ProfileError(f"locked character not found: {query}")
+    if len(matches) > 1:
+        found = ", ".join(sorted(path.name for path, _ in matches))
+        raise ProfileError(f"character name is ambiguous: {query} ({found})")
+
+    kit, _profile = matches[0]
+    checked = _check_kit(kit)
+    character_id = checked["character_id"]
+    return {
+        "status": "PASS",
+        "query": query,
+        "character_id": character_id,
+        "display_name": checked["display_name"],
+        "character_kit": checked["kit"],
+        "work_area": str(OUTPUT_ROOT / "_work" / character_id),
+        "profile": str((kit / "character-profile.json").resolve()),
+        "master_reference": checked["master_reference"],
+    }
 
 
 def _text_property(description: str = "") -> dict[str, Any]:
@@ -1753,306 +1822,107 @@ For future visuals, read both `character-profile.json` and this master reference
 """
 
 
-def _render_generation_prompt(
+def _render_compact_generation_prompt(
     profile: dict[str, Any],
     purpose: str,
     task: str,
 ) -> str:
-    identity = profile["identity"]
+    """Render only the identity information the current image must consume."""
+    chinese = str(profile["language"]).lower().startswith("zh")
+    display_name = profile["display_name"]
+    task = task.strip()
+
+    if purpose in {"scene", "consistency"}:
+        if chinese:
+            identity_line = (
+                f"第 1 张图片是已批准的{display_name}角色主参考图。"
+                "保持同一角色的核心外观、固有配色和画法。"
+            )
+            default_task = (
+                "生成一张一致性测试图，改变姿势、表情和简单背景，"
+                "但保持角色身份不变。"
+            )
+        else:
+            identity_line = (
+                f"Image 1 is the approved master reference for {display_name}. "
+                "Keep the same character, inherent colors, and rendering style."
+            )
+            default_task = (
+                "Create one consistency-test image with a different pose, "
+                "expression, and simple background while preserving identity."
+            )
+        current_task = task if purpose == "scene" else (task or default_task)
+        return f"{identity_line}\n{current_task}"
+
     anatomy = profile["anatomy"]
     head = anatomy["head"]
-    body = anatomy["body"]
     surface = profile["surface"]
     wardrobe = profile["wardrobe"]
-    view_model = profile["view_model"]
     rendering = profile["rendering"]
-    consistency = profile["consistency"]
-    chinese = str(profile["language"]).lower().startswith("zh")
-    palette_labels = {
-        item["id"]: f"{item['name']} {item['hex']}"
-        for item in surface["palette"]
-    }
-    material_labels = {
-        item["id"]: item["name"] for item in surface["materials"]
-    }
-    reference_separator = "、" if chinese else ", "
-
-    def color_refs(ids: list[str]) -> str:
-        return reference_separator.join(palette_labels[item] for item in ids)
-
-    def material_refs(ids: list[str]) -> str:
-        return reference_separator.join(material_labels[item] for item in ids)
 
     if chinese:
-        purpose_text = {
-            "master": (
-                "制作一张正式主参考图：单角色、完整全身、正面或轻微三分之四视角、"
-                "中性自然站姿、干净浅色背景。脸、身体比例、服装层级、配色落点与"
-                "全部标志性元素清楚可见。"
-            ),
-            "consistency": (
-                "制作一张一致性测试图：使用与主参考图不同的姿势和表情，以及简单背景；"
-                "仍完整保留角色结构、颜色落点、材质、服装连接和标志性元素。"
-            ),
-            "scene": task,
-        }[purpose]
-        intro = (
-            "以这份角色重建规范作为唯一身份依据。只输出本次任务要求的一张图；"
-            "正面、侧面和背面描述共同规定角色结构，不表示要制作多视图排版。"
-        )
-        if purpose != "master":
-            intro += (
-                "随输入提供的图片是已批准的唯一主参考图，用它保持角色身份、"
-                "比例、颜色和画法。"
-            )
         palette = "；".join(
-            (
-                f"{item['name']} {item['hex']}：{item['role']}，"
-                f"落在{item['placement']}，面积关系{item['coverage']}"
-            )
+            f"{item['name']} {item['hex']}用于{item['placement']}"
             for item in surface["palette"]
         )
-        markings = "；".join(
-            (
-                f"{item['name']}位于{item['area']}，形状{item['shape']}，"
-                f"边界{item['boundary']}，颜色{color_refs(item['palette_ids'])}"
-            )
-            for item in surface["markings"]
-        ) or "没有额外纹样"
-        materials = "；".join(
-            f"{item['name']}用于{item['areas']}，呈现{item['appearance']}"
-            for item in surface["materials"]
-        )
-        appendages = "；".join(
-            (
-                f"{item['name']}共{item['count']}个，{item['geometry']}，"
-                f"相对尺寸{item['relative_size']}，根部{item['attachment_point']}，"
-                f"静止时{item['resting_shape']}，末端{item['tip_shape']}，"
-                f"运动时{item['movement_behavior']}"
-            )
-            for item in anatomy["appendages"]
-        ) or "没有头部与四肢之外的附肢"
-        pieces = "；".join(
-            (
-                f"{item['name']}属于{item['layer']}，覆盖{item['coverage']}，"
-                f"版型{item['cut_and_shape']}，颜色{color_refs(item['palette_ids'])}，"
-                f"材质{material_refs(item['material_ids'])}，"
-                f"连接方式{item['closure_and_attachment']}，"
-                f"边缘与缝线{item['trim_and_seams']}，"
-                f"正面{item['front_view']}，侧面{item['side_view']}，"
-                f"背面{item['back_view']}"
-            )
-            for item in wardrobe["pieces"]
-        ) or "没有独立服装部件"
         signatures = "；".join(
-            (
-                f"{item['name']}：含义{item['meaning']}，几何{item['geometry']}，"
-                f"相对尺寸{item['relative_scale']}，颜色{color_refs(item['palette_ids'])}，"
-                f"材质{material_refs(item['material_ids'])}，"
-                f"连接方式{item['attachment']}，位置{item['placement']}；"
-                f"正面{item['front_view']}，侧面{item['side_view']}，"
-                f"背面{item['back_view']}，运动时{item['movement_behavior']}"
-            )
+            f"{item['name']}：{item['geometry']}，位于{item['placement']}，{item['attachment']}"
             for item in profile["signature_elements"]
         )
         lines = [
-            intro,
-            f"本次任务：{purpose_text}",
+            "生成一张正式角色主参考图：单角色、完整全身、正面或轻微三分之四视角、"
+            "中性站姿、干净浅色背景。",
             (
-                f"角色定位：{profile['display_name']}；用途{identity['purpose']}；"
-                f"受众{identity['audience']}；性格信号{ '、'.join(identity['traits']) }；"
-                f"第一印象{identity['desired_impression']}；"
-                f"象征核心{identity['symbolic_core']}。"
-            ),
-            (
-                f"整体形体：{anatomy['form_category']}，"
-                f"{anatomy['species_or_archetype']}；年龄感{anatomy['age_impression']}；"
+                f"角色：{display_name}，{anatomy['species_or_archetype']}；"
                 f"体型{anatomy['overall_build']}；比例{anatomy['proportion_system']}；"
-                f"轮廓{anatomy['silhouette']}。"
+                f"主轮廓{anatomy['silhouette']}。"
             ),
             (
-                f"头部：头型{head['head_shape']}；顶部结构"
-                f"{head['ears_horns_or_top_features']}；头发或毛簇"
-                f"{head['hair_fur_or_crown']}；五官布局{head['face_layout']}；"
-                f"眼睛{head['eyes']}；眉部{head['eyebrows']}；"
-                f"鼻部或口鼻部{head['nose_or_muzzle']}；嘴部{head['mouth']}；"
-                f"头部纹样{head['distinctive_markings']}。"
+                f"头脸：{head['head_shape']}；{head['ears_horns_or_top_features']}；"
+                f"{head['hair_fur_or_crown']}；眼睛{head['eyes']}；嘴部{head['mouth']}。"
             ),
+            f"服装：{wardrobe['summary']}；层次{wardrobe['layering_order']}。",
+            f"固有配色：{palette}。",
+            f"身份标志：{signatures}。",
             (
-                f"身体：颈肩{body['neck_and_shoulders']}；躯干{body['torso']}；"
-                f"手臂或前肢{body['arms_or_forelimbs']}；手或爪{body['hands_or_paws']}；"
-                f"髋腿{body['hips_and_legs']}；足部或底座{body['feet_or_base']}。"
-            ),
-            f"附肢：{appendages}。",
-            f"基础表面：{surface['base_covering']}。",
-            f"颜色地图：{palette}。",
-            f"纹样地图：{markings}。",
-            f"材质地图：{materials}。",
-            (
-                f"服装：{wardrobe['summary']}；穿着顺序"
-                f"{wardrobe['layering_order']}；部件：{pieces}。"
-            ),
-            f"标志性元素：{signatures}。",
-            (
-                f"视角结构：正面{view_model['front']}；侧面{view_model['side']}；"
-                f"背面{view_model['back']}；遮挡与前后关系"
-                f"{view_model['occlusion_and_overlap']}；"
-                f"各角度识别锚点{ '、'.join(view_model['always_visible_landmarks']) }。"
-            ),
-            (
-                f"绘制方式：{rendering['style_family']}；形状语言"
-                f"{rendering['shape_language']}；线条{rendering['linework']}；"
-                f"色彩{rendering['color_treatment']}；光影"
-                f"{rendering['lighting_and_shading']}；纹理{rendering['texture']}；"
-                f"细节密度{rendering['detail_density']}。"
-            ),
-            (
-                "一致性：以上全部身份结构保持一致；"
-                f"当次只允许变化{ '、'.join(consistency['flexible']) }。"
+                f"画法：{rendering['style_family']}；线条{rendering['linework']}；"
+                f"色彩{rendering['color_treatment']}；细节{rendering['detail_density']}。"
             ),
         ]
-        if task and purpose != "scene":
-            lines.append(f"本次附加要求：{task}")
+        if task:
+            lines.append(task)
         return "\n".join(lines)
 
-    purpose_text = {
-        "master": (
-            "Create one formal master reference: one full-body character, front "
-            "or slight three-quarter view, neutral natural stance, clean light "
-            "background, with the face, proportions, wardrobe layers, color "
-            "placement, and every signature element clearly visible."
-        ),
-        "consistency": (
-            "Create one consistency test image with a different pose and "
-            "expression and a simple background while preserving all identity "
-            "construction, color placement, materials, clothing connections, "
-            "and signature elements."
-        ),
-        "scene": task,
-    }[purpose]
-    intro = (
-        "Use this reconstruction specification as the sole character identity. "
-        "Output one image for the current task. Front, side, and back descriptions "
-        "jointly define construction and do not request a multi-view layout."
-    )
-    if purpose != "master":
-        intro += (
-            " The supplied image is the single approved master reference; use it "
-            "to preserve identity, proportions, color placement, and rendering."
-        )
     palette = "; ".join(
-        (
-            f"{item['name']} {item['hex']}: {item['role']}, placed on "
-            f"{item['placement']}, coverage {item['coverage']}"
-        )
+        f"{item['name']} {item['hex']} on {item['placement']}"
         for item in surface["palette"]
     )
-    markings = "; ".join(
-        (
-            f"{item['name']} on {item['area']}, shape {item['shape']}, "
-            f"boundary {item['boundary']}, colors {color_refs(item['palette_ids'])}"
-        )
-        for item in surface["markings"]
-    ) or "no additional markings"
-    materials = "; ".join(
-        f"{item['name']} on {item['areas']}, appearance {item['appearance']}"
-        for item in surface["materials"]
-    )
-    appendages = "; ".join(
-        (
-            f"{item['name']} ×{item['count']}, {item['geometry']}, "
-            f"relative size {item['relative_size']}, rooted at "
-            f"{item['attachment_point']}, resting {item['resting_shape']}, "
-            f"tip {item['tip_shape']}, movement {item['movement_behavior']}"
-        )
-        for item in anatomy["appendages"]
-    ) or "no appendages beyond the head and limbs"
-    pieces = "; ".join(
-        (
-            f"{item['name']} at {item['layer']}, covers {item['coverage']}, "
-            f"cut {item['cut_and_shape']}, colors {color_refs(item['palette_ids'])}, "
-            f"materials {material_refs(item['material_ids'])}, closure "
-            f"{item['closure_and_attachment']}, trim {item['trim_and_seams']}, "
-            f"front {item['front_view']}, side {item['side_view']}, "
-            f"back {item['back_view']}"
-        )
-        for item in wardrobe["pieces"]
-    ) or "no separate wardrobe pieces"
     signatures = "; ".join(
-        (
-            f"{item['name']}: meaning {item['meaning']}, geometry "
-            f"{item['geometry']}, relative scale {item['relative_scale']}, "
-            f"colors {color_refs(item['palette_ids'])}, "
-            f"materials {material_refs(item['material_ids'])}, attachment "
-            f"{item['attachment']}, placement {item['placement']}, "
-            f"front {item['front_view']}, side {item['side_view']}, "
-            f"back {item['back_view']}, movement {item['movement_behavior']}"
-        )
+        f"{item['name']}: {item['geometry']}, at {item['placement']}, {item['attachment']}"
         for item in profile["signature_elements"]
     )
     lines = [
-        intro,
-        f"Current task: {purpose_text}",
+        "Create one official character master reference: one full-body character, "
+        "front or slight three-quarter view, neutral stance, clean light background.",
         (
-            f"Role: {profile['display_name']}; purpose {identity['purpose']}; "
-            f"audience {identity['audience']}; traits {', '.join(identity['traits'])}; "
-            f"impression {identity['desired_impression']}; "
-            f"symbolic core {identity['symbolic_core']}."
-        ),
-        (
-            f"Overall anatomy: {anatomy['form_category']}, "
-            f"{anatomy['species_or_archetype']}; age impression "
-            f"{anatomy['age_impression']}; build {anatomy['overall_build']}; "
-            f"proportions {anatomy['proportion_system']}; "
+            f"Character: {display_name}, {anatomy['species_or_archetype']}; "
+            f"build {anatomy['overall_build']}; proportions {anatomy['proportion_system']}; "
             f"silhouette {anatomy['silhouette']}."
         ),
         (
-            f"Head: shape {head['head_shape']}; top features "
-            f"{head['ears_horns_or_top_features']}; hair or fur "
-            f"{head['hair_fur_or_crown']}; face layout {head['face_layout']}; "
-            f"eyes {head['eyes']}; eyebrows {head['eyebrows']}; "
-            f"nose or muzzle {head['nose_or_muzzle']}; mouth {head['mouth']}; "
-            f"head markings {head['distinctive_markings']}."
+            f"Head and face: {head['head_shape']}; {head['ears_horns_or_top_features']}; "
+            f"{head['hair_fur_or_crown']}; eyes {head['eyes']}; mouth {head['mouth']}."
         ),
+        f"Wardrobe: {wardrobe['summary']}; layering {wardrobe['layering_order']}.",
+        f"Inherent colors: {palette}.",
+        f"Identity marks: {signatures}.",
         (
-            f"Body: neck and shoulders {body['neck_and_shoulders']}; "
-            f"torso {body['torso']}; arms or forelimbs "
-            f"{body['arms_or_forelimbs']}; hands or paws {body['hands_or_paws']}; "
-            f"hips and legs {body['hips_and_legs']}; "
-            f"feet or base {body['feet_or_base']}."
-        ),
-        f"Appendages: {appendages}.",
-        f"Base surface: {surface['base_covering']}.",
-        f"Color map: {palette}.",
-        f"Marking map: {markings}.",
-        f"Material map: {materials}.",
-        (
-            f"Wardrobe: {wardrobe['summary']}; layering "
-            f"{wardrobe['layering_order']}; pieces: {pieces}."
-        ),
-        f"Signature elements: {signatures}.",
-        (
-            f"View construction: front {view_model['front']}; "
-            f"side {view_model['side']}; back {view_model['back']}; "
-            f"occlusion and overlap {view_model['occlusion_and_overlap']}; "
-            f"cross-angle landmarks "
-            f"{', '.join(view_model['always_visible_landmarks'])}."
-        ),
-        (
-            f"Rendering: {rendering['style_family']}; shape language "
-            f"{rendering['shape_language']}; linework {rendering['linework']}; "
-            f"color {rendering['color_treatment']}; light and shading "
-            f"{rendering['lighting_and_shading']}; texture "
-            f"{rendering['texture']}; detail density "
-            f"{rendering['detail_density']}."
-        ),
-        (
-            "Consistency: preserve every identity field above; "
-            f"the current task may vary only {', '.join(consistency['flexible'])}."
+            f"Rendering: {rendering['style_family']}; linework {rendering['linework']}; "
+            f"color {rendering['color_treatment']}; detail {rendering['detail_density']}."
         ),
     ]
-    if task and purpose != "scene":
-        lines.append(f"Additional task instruction: {task}")
+    if task:
+        lines.append(task)
     return "\n".join(lines)
 
 
@@ -2421,7 +2291,7 @@ def build_prompt_bundle(
             f"--purpose {purpose} requires a locked kit or --reference"
         )
 
-    prompt = _render_generation_prompt(profile, purpose, task)
+    prompt = _render_compact_generation_prompt(profile, purpose, task)
     prompt_sha256 = hashlib.sha256(prompt.encode("utf-8")).hexdigest()
     canonical_profile = json.dumps(
         _author_profile_only(profile),
@@ -2443,6 +2313,7 @@ def build_prompt_bundle(
         "master_sha256": _sha256(master) if master else None,
         "prompt_sha256": prompt_sha256,
         "prompt_characters": len(prompt),
+        "requires_user_confirmation": True,
         "prompt": prompt,
     }
 
@@ -2652,6 +2523,28 @@ def _command_schema(_: argparse.Namespace) -> int:
     return 0
 
 
+def _command_workspace(args: argparse.Namespace) -> int:
+    print(
+        json.dumps(
+            _workspace_paths(args.character_id),
+            ensure_ascii=False,
+            indent=2,
+        )
+    )
+    return 0
+
+
+def _command_resolve_character(args: argparse.Namespace) -> int:
+    print(
+        json.dumps(
+            _resolve_character(args.name_or_id),
+            ensure_ascii=False,
+            indent=2,
+        )
+    )
+    return 0
+
+
 def _command_draft(args: argparse.Namespace) -> int:
     output = Path(args.output)
     if output.exists():
@@ -2739,6 +2632,24 @@ def _build_parser() -> argparse.ArgumentParser:
         description=__doc__,
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
+
+    workspace_parser = subparsers.add_parser(
+        "workspace",
+        help="Print the repository-owned local output paths without creating them.",
+    )
+    workspace_parser.add_argument(
+        "--character-id",
+        default="",
+        help="Optional lowercase character identifier used to resolve its kit paths.",
+    )
+    workspace_parser.set_defaults(handler=_command_workspace)
+
+    resolve_parser = subparsers.add_parser(
+        "resolve-character",
+        help="Resolve a locked character by display name or canonical id.",
+    )
+    resolve_parser.add_argument("name_or_id")
+    resolve_parser.set_defaults(handler=_command_resolve_character)
 
     schema_parser = subparsers.add_parser(
         "schema",

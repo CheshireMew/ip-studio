@@ -16,8 +16,20 @@ sys.path.insert(0, str(ROOT / "tests"))
 
 import character_kit  # noqa: E402
 import motion_kit  # noqa: E402
+from pet import prepare_pet_run  # noqa: E402
 
 from test_production_workflows import MASTER_IMAGE, completed_profile  # noqa: E402
+
+
+class RepositoryOwnedPetWorkspaceTests(unittest.TestCase):
+    def test_internal_pet_preparer_does_not_use_the_callers_cwd(self) -> None:
+        destination = prepare_pet_run.default_output_dir("nyxie")
+
+        self.assertTrue(destination.is_relative_to(ROOT / "ip-studio-output"))
+        self.assertEqual(
+            destination.parent,
+            ROOT / "ip-studio-output" / "_work" / "codex-pet",
+        )
 
 
 def clip(
@@ -203,10 +215,16 @@ class MotionWorkflowTests(unittest.TestCase):
         motion_kit._prepare(self.kit, self._write_contract("npc", value), run)
 
         stored = json.loads((run / "motion-contract.json").read_text(encoding="utf-8"))
+        job_manifest = json.loads(
+            (run / "imagegen-jobs.json").read_text(encoding="utf-8")
+        )
         self.assertEqual({item["kind"] for item in stored["clips"]}, {"static"})
         self.assertEqual(
-            json.loads((run / "imagegen-jobs.json").read_text(encoding="utf-8"))["jobs"][0]["id"],
+            job_manifest["jobs"][0]["id"],
             "direction-poses",
+        )
+        self.assertTrue(
+            all(job["requires_user_confirmation"] for job in job_manifest["jobs"])
         )
 
     def test_front_facing_ui_motion_needs_no_direction_family(self) -> None:
@@ -256,6 +274,14 @@ class MotionWorkflowTests(unittest.TestCase):
         self.assertEqual(normalized["motion_id"], "codex-pet-v2")
         self.assertEqual(len(normalized["clips"]), 25)
         self.assertEqual(len(normalized["groups"]), 11)
+        jobs = json.loads((run / "imagegen-jobs.json").read_text(encoding="utf-8"))["jobs"]
+        self.assertTrue(all(job["requires_user_confirmation"] for job in jobs))
+        identity = (run / "references" / "character-identity.txt").read_text(
+            encoding="utf-8"
+        )
+        self.assertNotIn("各视角", identity)
+        self.assertNotIn("遮挡", identity)
+        self.assertLess(len(identity), 500)
 
 
 if __name__ == "__main__":
