@@ -1,0 +1,4 @@
+interface:
+  display_name: "Pet Studio"
+  short_description: "把锁定 IP 角色制作成可安装、可追溯并经过方向 QA 的运行时宠物"
+  default_prompt: "Use $pet-studio to turn my locked IP character into a runtime-ready pet package."

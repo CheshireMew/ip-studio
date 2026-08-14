@@ -1,18 +1,17 @@
 # IP Studio Skill Suite
 
-这个仓库现在包含三个职责独立、共享同一角色包协议的 Skill。角色身份、静态内容视觉和运行时动作素材分别有自己的入口，不再由一个大而全的 Skill 同时判断和执行。
+这个仓库包含四个职责独立、共享同一角色包协议的 Skill。角色身份、静态内容视觉、通用运行时动作和宠物生产分别有自己的入口；同一请求需要多个结果时会先锁定角色，再继续完成用户点名的下游结果。
 
 | Skill | 负责交付的最终结果 |
 | --- | --- |
 | `ip-studio` | 创建、导入、修改、升版并锁定可长期复用的角色身份包。 |
 | `ip-visuals` | 使用已锁定角色制作并归档头像、横幅、资料卡、封面、说明图、正文插图和整篇文章配图组。 |
 | `motion-studio` | 根据真实运行时合同制作静态姿势、方向、循环、单次动作、过渡、透明帧、图集和 manifest。 |
-
-Codex v2 桌宠不再由本仓库维护第二套实现。需要把已锁定角色制作成桌宠时，使用专门的 `hatch-pet` Skill，并把 IP Studio 当前主参考图交给它。
+| `pet-studio` | 把锁定角色制作成可追溯、可检查、可打包或安装的运行时宠物；当前内置 Codex v2 适配器。 |
 
 ## 效果预览
 
-三个 Skill 共享同一份角色身份真源。下面的角色主参考图由 `ip-studio` 锁定，后续内容视觉由 `ip-visuals` 消费，衍生结果不会反向改写角色身份。
+四个 Skill 共享同一份角色身份真源。下面的角色主参考图由 `ip-studio` 锁定，后续内容视觉、动作素材和宠物包只消费它，不会反向改写角色身份。
 
 <p align="center">
   <img src="docs/images/lantern-fox-master.webp" alt="灯笼狐正式主参考图示例" width="280">
@@ -34,9 +33,14 @@ Codex v2 桌宠不再由本仓库维护第二套实现。需要把已锁定角�
 </p>
 <p align="center"><sub>正文插图：只解释当前段落最值得图像化的一项内容。</sub></p>
 
+<p align="center">
+  <img src="docs/images/lantern-fox-pet-idle.gif" alt="灯笼狐宠物待机动画示例" width="280">
+</p>
+<p align="center"><sub>宠物动画：角色 revision、状态合同、方向 QA 和平台包保持可追溯。</sub></p>
+
 ## 安装
 
-先查看仓库中的三个 Skill：
+先查看仓库中的四个 Skill：
 
 ```powershell
 npx skills add CheshireMew/ip-studio --list
@@ -54,7 +58,7 @@ npx skills add CheshireMew/ip-studio --skill '*' -g -a codex -y
 npx skills add CheshireMew/ip-studio --skill ip-studio -g -a codex -y
 ```
 
-`ip-visuals` 和 `motion-studio` 会调用兄弟目录中 `ip-studio` 提供的正式角色包接口，因此使用静态视觉或动态素材时应安装整个套件。
+`ip-visuals`、`motion-studio` 和 `pet-studio` 会调用兄弟目录中的正式角色包或动作合同接口，因此使用下游能力时应安装整个套件。
 
 ## 使用
 
@@ -80,17 +84,18 @@ $motion-studio 使用 E:\path\to\character-kit，读取这个 Godot 项目的真
 $motion-studio 把这个角色做成前向应用助手，只需要待机、倾听、处理和完成状态，不要虚构方向动画。
 ```
 
-制作 Codex v2 桌宠：
+制作运行时宠物或 Codex v2 桌宠：
 
 ```text
-$hatch-pet 使用 E:\path\to\character-kit 中的当前主参考图制作 Codex v2 桌宠。
+$pet-studio 使用 E:\path\to\character-kit，根据这个桌面助手项目的真实状态制作并接入宠物。
+$pet-studio 使用“夜希”的锁定角色包制作 Codex v2 桌宠，检查通过后安装。
 ```
 
 ## 共享角色包
 
 从源码仓库运行时，`ip-studio` 把角色写入 Git 已忽略的 `ip-studio-output/<character-id>/`。从其它项目目录调用脚本不会把角色资料写进调用者项目。已安装的独立 Skill 则把本地工作区锚定在自身目录。
 
-角色包中的 `character-profile.json` 和当前版本登记的单张主参考图是唯一身份真源。`ip-visuals` 与 `motion-studio` 只读取它们，并记录自己消费的准确角色 revision；静态图、动作帧、失败图和当前场景不会反向进入角色身份。
+角色包中的 `character-profile.json` 和当前版本登记的单张主参考图是唯一身份真源。`ip-visuals`、`motion-studio` 与 `pet-studio` 只读取它们，并记录自己消费的准确角色 revision；静态图、动作帧、宠物图集、失败图和当前场景不会反向进入角色身份。
 
 已有本地角色包不需要迁移，拆分前后的 `ip-studio-output/` 位置保持不变。
 
@@ -98,7 +103,7 @@ $hatch-pet 使用 E:\path\to\character-kit 中的当前主参考图制作 Codex 
 
 用户已经提供完整提示词时，静态视觉流程原样传递，不追加构图、场景、动作、物件、配色、材质或装饰。没有完整提示词时，只写目标、原始材料、参考图职责、必要输出形式、固定机器协议和用户硬要求，不把维护字段、分析过程或方案理由塞进提示词。
 
-任何新图、编辑或重试都先展示实际将发送的完整提示词和有序图片输入并停止。用户确认后，才把完全相同的输入交给图像入口；输入变化就重新确认。动态素材属于批量重活，还会在开始生成前同时展示运行时依据、任务数量、输出目录、项目改动范围和验收方式。
+任何新图、编辑或重试都先展示实际将发送的完整提示词和有序图片输入并停止。用户确认后，才把完全相同的输入交给图像入口；输入变化就重新确认。动态素材和宠物属于批量重活，还会在开始生成前同时展示运行时依据、任务数量、输出目录、项目或安装改动范围和验收方式。方向动画 QA 在生成后执行，不扩写进生图提示词。
 
 ## 仓库结构
 
@@ -121,12 +126,20 @@ skills/
     references/dynamic-character-production.md
     scripts/motion_kit.py
     scripts/motion/
+  pet-studio/
+    SKILL.md
+    agents/openai.yaml
+    references/pet-production.md
+    references/direction-animation-qa.md
+    references/adapters/codex-v2.md
+    scripts/pet_kit.py
+    scripts/pet/
 tests/
 archive/
 ip-studio-output/   # 本地角色与生产数据，Git 忽略
 ```
 
-拆分前的单体入口位于 `archive/legacy-monolith/`，原 IP Studio 桌宠适配器位于 `archive/legacy-ip-studio-pet/`。两者只保留历史，不会被 Skill 安装器识别为活跃入口。原来的仓库根目录 `SKILL.md` 已迁移到 `skills/ip-studio/SKILL.md`。
+拆分前的单体入口位于 `archive/legacy-monolith/`，拆分期间暂存的旧桌宠代码位于 `archive/legacy-ip-studio-pet/`。归档入口已改名，不会被 Skill 安装器识别；正式入口分别位于 `skills/ip-studio/SKILL.md`、`skills/ip-visuals/SKILL.md`、`skills/motion-studio/SKILL.md` 和 `skills/pet-studio/SKILL.md`。
 
 ## 验证
 
@@ -135,10 +148,11 @@ python -m pytest tests -q
 python ../meta-skills/scripts/quick_validate.py skills/ip-studio
 python ../meta-skills/scripts/quick_validate.py skills/ip-visuals
 python ../meta-skills/scripts/quick_validate.py skills/motion-studio
+python ../meta-skills/scripts/quick_validate.py skills/pet-studio
 npx skills add . --list
 ```
 
-`quick_validate.py` 来自同级的 `meta-skills` 仓库；普通使用者不需要它。三套脚本均按自身文件位置寻找资源，验证时还应从仓库外目录用绝对路径调用各自的 `schema` 命令。
+`quick_validate.py` 来自同级的 `meta-skills` 仓库；普通使用者不需要它。四套脚本均按自身文件位置寻找资源，验证时还应从仓库外目录用绝对路径调用各自的 `schema` 命令。
 
 ## 隐私与许可
 

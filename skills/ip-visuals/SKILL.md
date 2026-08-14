@@ -1,6 +1,6 @@
 ---
 name: ip-visuals
-description: "使用 IP Studio 锁定的角色包制作、修订和归档头像、主页横幅、资料卡、封面、说明图、正文插图及整篇文章配图组。Use when the user wants static bitmap visuals featuring an existing locked IP character. Do not use for character identity design, generic visuals without an IP character, animation, pets, video, or 3D."
+description: "使用 IP Studio 锁定的角色包制作、修订和归档头像、主页横幅、资料卡、封面、说明图、正文插图及整篇文章配图组；只有角色图而没有角色包时先锁定身份再继续原请求。Use when the user wants static bitmap visuals featuring an existing or newly locked IP character. Do not use for generic visuals without an IP character, animation, pets, video, or 3D."
 ---
 
 # IP Visuals
@@ -9,7 +9,7 @@ description: "使用 IP Studio 锁定的角色包制作、修订和归档头像�
 
 ## 输入与创作边界
 
-先取得明确的锁定角色包。用户用名称或英文标识点名角色时，调用兄弟 Skill 的正式解析入口：
+先取得明确的锁定角色包。用户只有角色图或身份要求而没有角色包时，先用 `$ip-studio` 建立并锁定角色，再继续当前静态视觉请求，不要求用户重发。用户用名称或英文标识点名角色时，调用兄弟 Skill 的正式解析入口：
 
 ```text
 python <ip-studio-skill>/scripts/character_kit.py resolve-character <name-or-id>

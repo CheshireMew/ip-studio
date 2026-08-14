@@ -1,5 +1,5 @@
-# Archived IP Studio pet adapter
+# Archived IP Studio pet adapter snapshot
 
-This directory preserves the former IP Studio Codex-pet implementation and its production reference. It is not an active Skill, is not loaded by any current entrypoint, and is retained only so historical behavior and attribution remain recoverable.
+This directory preserves the pre-split IP Studio Codex-pet implementation and its production reference. It is not an active Skill and is retained so historical behavior and attribution remain recoverable.
 
-New Codex v2 pet requests belong to the dedicated `hatch-pet` Skill. The active `motion-studio` Skill contains only platform-neutral finite-state 2D character motion; the small chroma-matte routine it still needs is carried in that Skill with the original Apache-2.0 notice.
+The maintained implementation now lives in `skills/pet-studio`, where Codex v2 is one built-in platform adapter. The active `motion-studio` Skill remains platform-neutral and supplies the shared finite-state motion contract used by Pet Studio.

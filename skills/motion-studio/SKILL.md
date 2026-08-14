@@ -1,15 +1,15 @@
 ---
 name: motion-studio
-description: "把已锁定的 2D 角色转成由真实运行环境消费的静态姿势、方向、循环、单次动作、过渡、透明帧、图集和 manifest，并在明确要求时接入目标项目。Use when a game, app, web interface, or assistant needs finite-state raster character motion. Do not use for character identity creation, static content visuals, Codex pets, video, Live2D, skeletal animation, or 3D."
+description: "把已锁定的 2D 角色转成由真实运行环境消费的静态姿势、方向、循环、单次动作、过渡、透明帧、图集和 manifest，并在明确要求时接入目标项目；只有角色图而没有角色包时先锁定身份再继续原请求。Use when a game, app, web interface, or assistant needs finite-state raster character motion. Do not use when the final requested result is a pet package or pet-platform installation, or for static content visuals, video, Live2D, skeletal animation, or 3D."
 ---
 
 # Motion Studio
 
-把 `$ip-studio` 锁定的 2D 角色转成真实运行环境会消费的静态姿势、方向、循环、单次动作、过渡、透明帧、图集和 manifest。它面向有限状态和逐帧位图驱动的游戏角色、应用助手、网页角色与状态式吉祥物；不创建角色身份，不制作普通静态内容视觉，也不处理视频、Live2D、骨骼动画或 3D。Codex v2 桌宠由 `$hatch-pet` 完成，本 Skill 不再维护第二套桌宠协议。
+把 `$ip-studio` 锁定的 2D 角色转成真实运行环境会消费的静态姿势、方向、循环、单次动作、过渡、透明帧、图集和 manifest。它面向有限状态和逐帧位图驱动的游戏角色、应用助手、网页角色与状态式吉祥物；不创建角色身份，不制作普通静态内容视觉，也不处理视频、Live2D、骨骼动画或 3D。最终结果是桌面助手、应用宠物、宠物平台包或安装结果时由 `$pet-studio` 负责，本 Skill 只提供它需要的通用动作合同和确定性生产能力。
 
 ## 从真实运行时建立合同
 
-先取得锁定角色包并完整读取 `references/dynamic-character-production.md`。目标项目存在时，读取真实的状态生产者、方向选择、动作结果发生位置、图片消费者、锚点、图集导入和最终可见结果；只有正式协议而没有代码时依据协议。不要从常见动画清单倒推动作：日程 NPC 可以只有四方向静态图，前向助手没有方向输入时不生成四向，转向只有在运行时存在独立过渡时才成为动画。
+先取得锁定角色包；只有角色图或身份要求而没有角色包时，先用 `$ip-studio` 锁定身份，再继续当前动作请求。完整读取 `references/dynamic-character-production.md`。目标项目存在时，读取真实的状态生产者、方向选择、动作结果发生位置、图片消费者、锚点、图集导入和最终可见结果；只有正式协议而没有代码时依据协议。不要从常见动画清单倒推动作：日程 NPC 可以只有四方向静态图，前向助手没有方向输入时不生成四向，转向只有在运行时存在独立过渡时才成为动画。
 
 所有脚本都用当前 Skill 目录中的 `scripts/motion_kit.py`：
 

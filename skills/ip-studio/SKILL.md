@@ -1,13 +1,13 @@
 ---
 name: ip-studio
-description: "创建、导入、修改并锁定可跨会话复用的个人或品牌 IP 角色包，维护唯一角色档案、主参考图和无损版本历史。Use when a user wants to establish or revise a stable stylized character identity. Do not use for static derivative visuals, animation assets, Codex pets, video, Live2D, or 3D."
+description: "创建、导入、修改并锁定可跨会话复用的个人或品牌 IP 角色包，维护唯一角色档案、主参考图和无损版本历史，并在同一请求还点名下游成品时把已锁定角色继续交给对应兄弟 Skill。Use when a user wants to establish or revise a stable stylized character identity, including as the first step of a requested derivative result. Do not use as the sole producer of static visuals, motion assets, pet packages, video, Live2D, or 3D."
 ---
 
 # IP Studio
 
 把身份线索或已有角色图变成可跨会话复用的角色包。`character-profile.json` 与当前版本登记的单张主参考图是唯一身份真源；测试图、衍生图和动态素材只消费它们，不反向改写角色。
 
-本 Skill 只负责从零创建、导入已有形象、修改和升版、锁定与校验角色身份。头像、横幅、资料卡、封面和文章插图由 `$ip-visuals` 完成；有限状态的 2D 动作素材由 `$motion-studio` 完成；Codex v2 桌宠由 `$hatch-pet` 完成。普通品牌策划、照片级数字分身、视频、Live2D、骨骼动画和 3D 不属于本 Skill。
+本 Skill 只负责从零创建、导入已有形象、修改和升版、锁定与校验角色身份。头像、横幅、资料卡、封面和文章插图由 `$ip-visuals` 完成；有限状态的 2D 动作素材由 `$motion-studio` 完成；桌面助手、应用宠物和平台宠物包由 `$pet-studio` 完成。普通品牌策划、照片级数字分身、视频、Live2D、骨骼动画和 3D 不属于本 Skill。
 
 ## 输入、权限与创作方式
 
@@ -54,4 +54,4 @@ python <ip-studio-skill>/scripts/character_kit.py finalize <kit-folder> --profil
 python <ip-studio-skill>/scripts/character_kit.py check <kit-folder>
 ```
 
-`finalize` 把旧档案、说明和主图保存在历史中。完成前重新读取当前 `character-profile.json`、`character-guide.md` 和实际主图，并确认 `check` 通过。交付时先展示正式主图，再说明核心记忆点、当前版本和角色包绝对路径；没有真实主图、可读档案和通过的校验时，不声称角色已锁定。满足角色身份请求后停止，不自动扩展静态视觉、动作或平台版本。
+`finalize` 把旧档案、说明和主图保存在历史中。完成前重新读取当前 `character-profile.json`、`character-guide.md` 和实际主图，并确认 `check` 通过。交付时先展示正式主图，再说明核心记忆点、当前版本和角色包绝对路径；没有真实主图、可读档案和通过的校验时，不声称角色已锁定。请求只要求角色身份时到此停止；同一请求已经点名静态视觉、动作素材或宠物结果时，把刚锁定的角色包继续交给 `$ip-visuals`、`$motion-studio` 或 `$pet-studio` 完成原请求，不要求用户重新发起任务，也不自动增加未点名的下游结果。
