@@ -43,6 +43,7 @@ TOP_KEYS = {
     "visual_id",
     "kind",
     "language",
+    "prompt_text",
     "visual_language",
     "content",
     "message",
@@ -177,6 +178,20 @@ VISUAL_LANGUAGES: dict[str, dict[str, Any]] = {
         "profile": "assets/visual-languages/okx-editorial/style-profile.json",
         "source_notice": "assets/visual-languages/okx-editorial/SOURCE.md",
         "style_guide": "assets/visual-languages/okx-editorial/STYLE.md",
+    },
+    "binance-editorial": {
+        "display_name": "Binance Editorial",
+        "mode": "prompt-profile",
+        "available_for": {
+            "profile-banner",
+            "profile-card",
+            "cover",
+            "explainer",
+            "article-illustration",
+        },
+        "profile": "assets/visual-languages/binance-editorial/style-profile.json",
+        "source_notice": "assets/visual-languages/binance-editorial/SOURCE.md",
+        "style_guide": "assets/visual-languages/binance-editorial/STYLE.md",
     },
 }
 BUILT_IN_REFERENCE_ROLES = frozenset(
@@ -593,6 +608,8 @@ def _filename_token(value: str) -> str:
 def _validate_brief(data: Any, base_dir: Path) -> dict[str, Any]:
     if isinstance(data, dict) and "visual_language" not in data:
         data = {**data, "visual_language": "default"}
+    if isinstance(data, dict) and "prompt_text" not in data:
+        data = {**data, "prompt_text": ""}
     brief = copy.deepcopy(_require_object(data, "$", TOP_KEYS))
     if brief["schema_version"] != SCHEMA_VERSION:
         _fail("$.schema_version", f"must equal {SCHEMA_VERSION}")
@@ -612,6 +629,9 @@ def _validate_brief(data: Any, base_dir: Path) -> dict[str, Any]:
     brief["language"] = _text(
         brief["language"], "$.language", maximum=32
     )
+    brief["prompt_text"] = _text(
+        brief["prompt_text"], "$.prompt_text", optional=True, maximum=100000
+    )
     visual_language = _text(
         brief["visual_language"],
         "$.visual_language",
@@ -623,17 +643,24 @@ def _validate_brief(data: Any, base_dir: Path) -> dict[str, Any]:
     brief["visual_language"] = visual_language
 
     content = _require_object(brief["content"], "$.content", CONTENT_KEYS)
+    prompt_is_complete = bool(brief["prompt_text"])
     content["source_label"] = _text(
-        content["source_label"], "$.content.source_label", maximum=500
+        content["source_label"],
+        "$.content.source_label",
+        optional=prompt_is_complete,
+        maximum=500,
     )
     content["source_text"] = _text(
-        content["source_text"], "$.content.source_text", maximum=100000
+        content["source_text"],
+        "$.content.source_text",
+        optional=prompt_is_complete,
+        maximum=100000,
     )
 
     message = _require_object(brief["message"], "$.message", MESSAGE_KEYS)
     for key in MESSAGE_KEYS:
         message[key] = _text(
-            message[key], f"$.message.{key}", maximum=3000
+            message[key], f"$.message.{key}", optional=True, maximum=3000
         )
 
     brand = _require_object(brief["brand"], "$.brand", BRAND_KEYS)
@@ -678,7 +705,7 @@ def _validate_brief(data: Any, base_dir: Path) -> dict[str, Any]:
     composition["title"] = _text(
         composition["title"],
         "$.composition.title",
-        optional=kind == "avatar",
+        optional=True,
         maximum=80,
     )
     composition["subtitle"] = _text(
@@ -690,23 +717,16 @@ def _validate_brief(data: Any, base_dir: Path) -> dict[str, Any]:
     composition["conclusion"] = _text(
         composition["conclusion"],
         "$.composition.conclusion",
-        optional=kind != "explainer",
+        optional=True,
         maximum=200,
     )
     labels = _text_list(
         composition["labels"], "$.composition.labels", 0, 5
     )
-    if kind == "explainer" and not 3 <= len(labels) <= 5:
-        _fail("$.composition.labels", "must contain 3-5 items for an explainer")
-    if kind == "article-illustration" and len(labels) == 1:
-        _fail(
-            "$.composition.labels",
-            "must be empty or contain 2-5 items for an article illustration",
-        )
     composition["labels"] = labels
 
     palette = _text_list(
-        composition["palette"], "$.composition.palette", 2, 5
+        composition["palette"], "$.composition.palette", 0, 5
     )
     for index, color in enumerate(palette):
         if not HEX_COLOR_RE.fullmatch(color):
@@ -716,16 +736,15 @@ def _validate_brief(data: Any, base_dir: Path) -> dict[str, Any]:
             )
     if kind == "cover" and len(palette) > 4:
         _fail("$.composition.palette", "must contain 2-4 colors for a cover")
-    if kind == "avatar" and len(palette) < 3:
-        _fail("$.composition.palette", "must contain 3-5 colors for an avatar")
     composition["palette"] = [item.upper() for item in palette]
     composition["style_notes"] = _text(
         composition["style_notes"],
         "$.composition.style_notes",
+        optional=True,
         maximum=3000,
     )
 
-    if kind == "cover":
+    if kind == "cover" and composition["title"]:
         compact_title = re.sub(r"\s+", "", composition["title"])
         if not 6 <= len(compact_title) <= 16:
             _fail(
@@ -740,7 +759,7 @@ def _validate_brief(data: Any, base_dir: Path) -> dict[str, Any]:
     )
     for key in ACTION_KEYS:
         action[key] = _text(
-            action[key], f"$.character_action.{key}", maximum=3000
+            action[key], f"$.character_action.{key}", optional=True, maximum=3000
         )
 
     references = brief["references"]
@@ -767,8 +786,8 @@ def _validate_brief(data: Any, base_dir: Path) -> dict[str, Any]:
     _validate_visual_language_references(brief, kind)
 
     decisions = brief["decisions"]
-    if not isinstance(decisions, list) or not 1 <= len(decisions) <= 50:
-        _fail("$.decisions", "must contain 1-50 decisions")
+    if not isinstance(decisions, list) or not 0 <= len(decisions) <= 50:
+        _fail("$.decisions", "must contain 0-50 decisions")
     cleaned_decisions: list[dict[str, str]] = []
     for index, item in enumerate(decisions):
         decision = _require_object(
@@ -806,6 +825,7 @@ def _brief_template(kind: str, visual_id: str, language: str) -> dict[str, Any]:
         "visual_id": visual_id,
         "kind": kind,
         "language": language,
+        "prompt_text": "",
         "visual_language": "default",
         "content": {"source_label": "", "source_text": ""},
         "message": {
@@ -836,219 +856,44 @@ def _brief_template(kind: str, visual_id: str, language: str) -> dict[str, Any]:
     }
 
 
-def _reference_mapping(brief: dict[str, Any]) -> str:
-    lines = [
-        "第 1 张图片是角色包中已批准的唯一主参考图。",
-    ]
-    for index, reference in enumerate(brief["references"], start=2):
-        lines.append(f"第 {index} 张图片用于：{reference['role']}。")
-    return "\n".join(lines)
-
-
-def _shared_decisions(brief: dict[str, Any]) -> str:
-    message = brief["message"]
-    brand = brief["brand"]
-    composition = brief["composition"]
-    action = brief["character_action"]
-    return (
-        f"内容真源：{brief['content']['source_label']}\n"
-        f"{brief['content']['source_text']}\n\n"
-        f"已确定的传播判断：核心对象是“{message['core_object']}”；"
-        f"观众原本不容易理解“{message['audience_gap']}”；"
-        f"需要表现的机制或变化是“{message['mechanism_or_change']}”；"
-        f"看完应记住“{message['takeaway']}”。\n"
-        f"品牌角色：{brand['role']}；名称：{brand['name'] or '无独立品牌名'}；"
-        f"视觉线索：{brand['visual_cues'] or '服从角色与内容'}。\n"
-        f"角色在画面中担任{action['role']}，亲自{action['action']}，"
-        f"直接作用于{action['affected_object']}，形成可见结果："
-        f"{action['visible_result']}。角色的爪、身体或已连接标志物必须与对象"
-        "发生可见接触并造成状态变化，使角色动作承担这段信息关系；"
-        "不采用旁站、教鞭或只指向内容的讲解姿势。角色完成动作时，身体、"
-        "服装和标志物仍保持角色档案规定的数量、位置与连接方式，同一标志物"
-        "只出现档案规定的实例数。\n"
-        f"主色：{', '.join(composition['palette'])}；"
-        f"补充风格：{composition['style_notes']}。"
-    )
-
-
 def _uses_visual_language(brief: dict[str, Any], language: str) -> bool:
     return _selected_visual_language(brief) == language
 
 
-def _minimal_handdrawn_contract() -> str:
-    return """视觉语言已选择“极简手绘 IP”。带有 minimal-handdrawn-style 角色的完整图片只用于校准留白、线条密度、色彩职责和角色参与方式，不临摹其中的构图、物体组合、文字或隐喻。
+def _render_task(brief: dict[str, Any]) -> str:
+    """Return the exact concise prompt that will be shown before generation."""
+    prompt_text = brief.get("prompt_text", "").strip()
+    if prompt_text:
+        return prompt_text
 
-把抽象内容重新翻译成一个动作、一件无需说明就能认出的低技术物件和一个可见结果。整张图是一个连续的物理场景，角色亲自推动因果关系。主体与核心装置合计约占画面 40%–60%，至少保留约 35% 纯白空白。使用细而略有手绘感的黑线和平涂；黑色负责角色与结构，其余 2–3 种强调色各自只负责流动、问题或结果、提示中的一项。表情克制，优先用身体方向和对象反馈表达情绪。短标签贴近对象，能删就删。
-
-不要生成卡片墙、仪表盘、网页界面、嵌套边框、独立小插图拼盘、完整环境、渐变、投影、体积光、写实纹理或无因果作用的装饰图标。"""
-
-
-def _prompt_profile_contract(style: str) -> str:
-    profile, _ = _load_style_profile(style)
-    prompt_json = json.dumps(
-        profile["prompt"],
-        ensure_ascii=False,
-        indent=2,
-        sort_keys=False,
-    )
-    return (
-        f"视觉语言已选择“{profile['display_name']}”。以下 JSON 是本次唯一的"
-        "品牌视觉真源；直接按字段综合完成画面，不查找或加载风格案例图。\n\n"
-        f"{prompt_json}"
-    )
-
-
-def _okx_editorial_task(
-    brief: dict[str, Any],
-    mapping: str,
-    decisions: str,
-    title: str,
-    subtitle: str,
-    labels: str,
-    conclusion: str,
-) -> str:
     kind_labels = {
-        "profile-banner": "个人或品牌主页横幅",
-        "profile-card": "个人或品牌 IP 资料卡",
+        "avatar": "社交头像",
+        "profile-banner": "主页横幅",
+        "profile-card": "IP 资料卡",
         "cover": "文章封面",
-        "explainer": "社交媒体说明图",
+        "explainer": "说明图",
         "article-illustration": "正文插图",
     }
-    brief_rule = {
-        "profile-banner": "保留头像、按钮和平台裁切安全区；没有平台资料时给左下角头像区留空。",
-        "profile-card": "名称、定位与角色形成第一视觉层，只保留 2–4 个稳定身份标签。",
-        "cover": "核心对象、角色动作和标题共同表达一项关键变化，标题最多两行。",
-        "explainer": "用选定的单一结构组织 3–5 个节点，位置、大小与绿色路径形成手机端阅读顺序。",
-        "article-illustration": "只解释当前段落最值得图像化的一项关系，文字不是理解所必需时省略。",
-    }
-    return f"""直接生成一张 {brief['composition']['aspect_ratio']} {kind_labels[brief['kind']]}，不输出分析过程。
+    lines = [
+        f"请使用第 1 张图片中的已批准角色形象，生成一张 "
+        f"{brief['composition']['aspect_ratio']} {kind_labels[brief['kind']]}。"
+    ]
+    for index, reference in enumerate(brief["references"], start=2):
+        lines.append(f"第 {index} 张图片用于：{reference['role']}。")
 
-图片对应关系：
-{mapping}
-
-{decisions}
-
-{_prompt_profile_contract("okx-editorial")}
-
-采用“{brief['composition']['structure']}”构图。{brief_rule[brief['kind']]}角色动作、主要对象和可见结果构成唯一视觉中心；前景负责动作接触，中景承载核心信息，背景只提供空间和品牌气氛。主标题准确写为“{title}”；副标题：{subtitle}；必要标签：{labels}；结论：{conclusion}。除这些已确认文字以及内容真源中的必要专有名词、数字外，不添加其它文案或数据。"""
-
-
-def _render_task(brief: dict[str, Any]) -> str:
-    kind = brief["kind"]
-    composition = brief["composition"]
-    title = composition["title"] or "无文字"
-    subtitle = composition["subtitle"] or "无"
-    labels = "、".join(composition["labels"]) or "无"
-    conclusion = composition["conclusion"] or "无"
-    mapping = _reference_mapping(brief)
-    decisions = _shared_decisions(brief)
     visual_language = _selected_visual_language(brief)
-
-    if visual_language == "okx-editorial":
-        return _okx_editorial_task(
-            brief,
-            mapping,
-            decisions,
-            title,
-            subtitle,
-            labels,
-            conclusion,
+    if visual_language != "default":
+        lines.append(
+            f"用户选择的视觉风格：{VISUAL_LANGUAGES[visual_language]['display_name']}。"
         )
 
-    if kind == "cover" and visual_language == "minimal-handdrawn":
-        return f"""直接生成一张 {composition['aspect_ratio']} 横版极简手绘文章封面，不输出分析过程。
-
-图片对应关系：
-{mapping}
-
-{decisions}
-
-{_minimal_handdrawn_contract()}
-
-只采用一个“{composition['structure']}”核心叙事，让具体核心对象、角色动作、物件状态和标题共同表达同一项变化。主标题准确写为“{title}”，最多两行；副标题：{subtitle}。标题与场景共享留白，不叠加海报边框、装饰层或第二场景。品牌为核心时只保留必要名称、logo 或品牌色，品牌为辅助时把它压到相关对象附近。"""
-
-    if kind == "explainer" and visual_language == "minimal-handdrawn":
-        return f"""直接生成一张适合手机阅读的 {composition['aspect_ratio']} 极简手绘说明图，不输出分析过程。
-
-图片对应关系：
-{mapping}
-
-{decisions}
-
-{_minimal_handdrawn_contract()}
-
-只采用“{composition['structure']}”这一种关系，把 3–5 个关键节点放在同一个装置、路径或连续互动中，不拆成卡片和模块。主标题准确写为“{title}”，最多两行；节点短标签依次为：{labels}；结论写为“{conclusion}”。角色接收输入、完成关键动作并把可见结果传向下一节点，位置、流向和对象状态本身形成阅读顺序。"""
-
-    if kind == "article-illustration" and visual_language == "minimal-handdrawn":
-        return f"""直接生成一张 {composition['aspect_ratio']} 横版极简手绘正文插图，不输出分析过程。
-
-图片对应关系：
-{mapping}
-
-{decisions}
-
-{_minimal_handdrawn_contract()}
-
-只解释当前内容中最值得图像化的一项关系或变化，采用“{composition['structure']}”表达。优先使用一个物理隐喻场景：角色亲自移动、连接、拆分、选择、阻挡、压制、倒入或取出对象，并让对象的位置、流向或前后状态显示结果。短标题：{title}；副标题：{subtitle}；必要标签：{labels}。隐藏全部文字后仍应能看懂主要动作和结果；画面到此即止。"""
-
-    if kind == "cover":
-        return f"""直接生成一张 {composition['aspect_ratio']} 横版二次元文章封面，不输出分析过程。
-
-图片对应关系：
-{mapping}
-
-{decisions}
-
-只采用一个“{composition['structure']}”核心视觉叙事。把具体核心对象、视觉隐喻、角色动作和标题共同用于表达同一项关键变化；角色的动作是叙事中的必要因果环节。采用极简符号海报与精致二次元插画结合的风格，保持一个明确焦点和充足呼吸感。主标题准确写为“{title}”，最多两行；副标题：{subtitle}。品牌为核心时让名称、logo 与设计语言进入第一视觉层，品牌为辅助时只融入相关位置。画面只保留一个视觉中心和必要文字，不扩展内容真源之外的品牌、功能或行业符号。"""
-
-    if kind == "explainer":
-        return f"""直接生成一张适合推文、社媒传播和手机阅读的 {composition['aspect_ratio']} 说明图，不输出分析过程。
-
-图片对应关系：
-{mapping}
-
-{decisions}
-
-只采用“{composition['structure']}”这一种主要图解结构。按“主标题 → 核心结构 → 3–5 个关键模块 → 一句结论”建立明确阅读顺序。主标题准确写为“{title}”，最多两行；模块短标题依次为：{labels}；结论写为“{conclusion}”。每个模块只保留短标题、必要数字和一句极短说明。角色作为信息结构中的行动节点，接收输入、执行动作并把可见结果传到下一环，或作出会改变路径的选择。品牌为核心时让名称、logo 和设计语言进入第一视觉层，品牌为辅助时只融入相关节点。信息量以手机端能顺畅读完为止。"""
-
-    if kind == "article-illustration":
-        return f"""直接生成一张 {composition['aspect_ratio']} 横版正文插图，不输出分析过程。
-
-图片对应关系：
-{mapping}
-
-{decisions}
-
-只解释当前内容中最值得图像化的一项关系或变化，采用“{composition['structure']}”表达。重点表现对象怎样连接、分工、转换、冲突或改变结果，不陈列一组相关物品。采用轻量概念图解与二次元插画结合的风格，图形语言简洁统一。角色亲自移动、连接、拆分、选择、阻挡或转换对象，或者让机制对角色造成可见的前后变化；角色行为承担一段信息关系。短标题：{title}；副标题：{subtitle}；必要标签：{labels}。文字并非理解所必需时省略。视觉范围到解释清楚这一项内容为止。"""
-
-    if kind == "avatar":
-        return f"""直接生成一张 {composition['aspect_ratio']} 社交头像，不输出分析过程。
-
-图片对应关系：
-{mapping}
-
-{decisions}
-
-采用“{composition['structure']}”头像构图。角色正面大头或头肩居中，核心轮廓、眼睛、表情、服装领口和标志物在小尺寸仍能辨认；主体全部留在圆形裁切安全区，同时方形显示也完整。画面使用干净背景和高对比色块，不添加标题、说明文字或无关装饰。结果是一张能同时用于圆形与方形平台裁切的完整 1:1 源图。"""
-
-    if kind == "profile-banner":
-        return f"""直接生成一张 {composition['aspect_ratio']} 个人或品牌主页横幅，不输出分析过程。
-
-图片对应关系：
-{mapping}
-
-{decisions}
-
-采用“{composition['structure']}”构图，让角色以半身、头肩或动态回眸进入一个明确品牌叙事。根据用户提供的平台资料保留头像、按钮和裁切安全区；没有平台资料时采用左下角留空的通用主页安全布局。主标题或标语准确写为“{title}”，副标题：{subtitle}。角色与核心符号发生真实互动并产生可见变化，背景保持干净，文字和装饰不抢角色。"""
-
-    return f"""直接生成一张 {composition['aspect_ratio']} 个人或品牌 IP 资料卡，不输出分析过程。
-
-图片对应关系：
-{mapping}
-
-{decisions}
-
-采用“{composition['structure']}”构图。让一个主角色、名称和一句定位形成第一视觉层，再用 2–4 个短标签呈现稳定身份线索。标题准确写为“{title}”，副标题：{subtitle}；标签：{labels}。角色通过真实动作把核心象征带入信息结构，卡片在手机端缩略图中仍能快速识别，背景和装饰服从角色与信息层级。角色档案中的三视图、配色地图和结构清单只用于保持身份，不作为资料卡要展示的内容。"""
+    lines.extend(
+        [
+            f"材料：{brief['content']['source_label']}",
+            brief["content"]["source_text"],
+        ]
+    )
+    return "\n".join(lines)
 
 
 def build_visual_bundle(
@@ -1098,6 +943,7 @@ def build_visual_bundle(
                 "brief_index": brief_index,
             }
         )
+    prompt_sha256 = _sha256_bytes(task.encode("utf-8"))
     return {
         "status": "PASS",
         "visual_id": brief["visual_id"],
@@ -1110,10 +956,11 @@ def build_visual_bundle(
         "profile_sha256": character["profile_sha256"],
         "master_reference": character["master_reference"],
         "master_sha256": character["master_sha256"],
-        "prompt_sha256": character["prompt_sha256"],
-        "prompt_characters": character["prompt_characters"],
+        "prompt_sha256": prompt_sha256,
+        "prompt_characters": len(task),
+        "requires_user_confirmation": True,
         "image_references": image_references,
-        "prompt": character["prompt"],
+        "prompt": task,
         "brief": brief,
     }
 
@@ -1373,7 +1220,7 @@ def _archive_final(
         "r001",
         None,
         "initial",
-        "initial approved visual",
+        "initial requested visual",
     )
     pointer = {
         "schema_version": CURRENT_SCHEMA_VERSION,
@@ -2442,7 +2289,7 @@ def _build_parser() -> argparse.ArgumentParser:
     revision_prompt_parser.set_defaults(handler=_command_revision_prompt)
 
     finalize_parser = subparsers.add_parser(
-        "finalize", help="Archive an approved visual without changing identity."
+        "finalize", help="Archive the generated visual without changing identity."
     )
     finalize_parser.add_argument("kit")
     finalize_parser.add_argument("--brief", required=True)

@@ -8,6 +8,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -204,6 +205,83 @@ def article_plan() -> dict:
     return plan
 
 
+class RepositoryWorkspaceTests(unittest.TestCase):
+    def test_workspace_is_anchored_to_ip_studio_when_called_elsewhere(self) -> None:
+        with tempfile.TemporaryDirectory() as foreign_workspace:
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    str(ROOT / "scripts" / "character_kit.py"),
+                    "workspace",
+                    "--character-id",
+                    "nyxie",
+                ],
+                cwd=foreign_workspace,
+                check=True,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+            )
+
+        result = json.loads(completed.stdout)
+        output_root = ROOT / "ip-studio-output"
+        self.assertEqual(result["status"], "PASS")
+        self.assertEqual(Path(result["repository_root"]), ROOT)
+        self.assertEqual(Path(result["output_root"]), output_root)
+        self.assertEqual(Path(result["character_kit"]), output_root / "nyxie")
+        self.assertEqual(
+            Path(result["work_area"]), output_root / "_work" / "nyxie"
+        )
+
+    def test_workspace_rejects_an_unsafe_character_id(self) -> None:
+        completed = subprocess.run(
+            [
+                sys.executable,
+                str(ROOT / "scripts" / "character_kit.py"),
+                "workspace",
+                "--character-id",
+                "../outside",
+            ],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+        )
+
+        self.assertEqual(completed.returncode, 1)
+        self.assertIn("character-id must be", completed.stderr)
+
+    def test_locked_character_resolves_from_chinese_name_or_english_id(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            output_root = Path(temporary) / "ip-studio-output"
+            kit = output_root / "nyxie"
+            profile = completed_profile()
+            profile["character_id"] = "nyxie"
+            profile["display_name"] = "夜希"
+            profile_path = Path(temporary) / "nyxie-profile.json"
+            profile_path.write_bytes(character_kit._json_bytes(profile))
+            character_kit._finalize(kit, profile_path, MASTER_IMAGE)
+
+            with mock.patch.object(character_kit, "OUTPUT_ROOT", output_root):
+                chinese = character_kit._resolve_character("夜希")
+                english = character_kit._resolve_character("Nyxie")
+
+        self.assertEqual(chinese["character_id"], "nyxie")
+        self.assertEqual(english["character_kit"], str(kit.resolve()))
+
+    def test_unknown_locked_character_fails_instead_of_inventing_a_path(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            with mock.patch.object(
+                character_kit,
+                "OUTPUT_ROOT",
+                Path(temporary) / "ip-studio-output",
+            ):
+                with self.assertRaisesRegex(
+                    character_kit.ProfileError,
+                    "locked character not found",
+                ):
+                    character_kit._resolve_character("不存在的角色")
+
+
 class ProductionWorkflowTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temporary = tempfile.TemporaryDirectory()
@@ -220,6 +298,19 @@ class ProductionWorkflowTests(unittest.TestCase):
         path = self.root / name
         path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
         return path
+
+    def test_scene_prompt_uses_the_master_instead_of_dumping_the_profile(self) -> None:
+        task = "用夜希的形象给这段文章配一幅 16:9 横版正文插图。"
+        bundle = character_kit.build_prompt_bundle(self.kit, "scene", task)
+
+        self.assertTrue(bundle["requires_user_confirmation"])
+        self.assertIn("第 1 张图片是已批准的", bundle["prompt"])
+        self.assertIn(task, bundle["prompt"])
+        self.assertNotIn("受众", bundle["prompt"])
+        self.assertNotIn("侧面", bundle["prompt"])
+        self.assertNotIn("背面", bundle["prompt"])
+        self.assertNotIn("一致性约束", bundle["prompt"])
+        self.assertLess(len(bundle["prompt"]), 300)
 
     def test_visual_revision_keeps_parent_and_uses_previous_image(self) -> None:
         brief_path = self._write_json("visual-r1.json", completed_brief("revision-test"))
@@ -266,7 +357,9 @@ class ProductionWorkflowTests(unittest.TestCase):
         self.assertEqual(record["generation"]["input_references"][1]["source"], "previous-visual")
 
     def test_cli_prompt_finalize_and_check_share_one_archive_contract(self) -> None:
-        brief_path = self._write_json("cli-visual.json", completed_brief("cli-chain"))
+        brief = completed_brief("cli-chain")
+        brief["prompt_text"] = "使用角色参考图，为文章生成一张 16:9 正文插图。"
+        brief_path = self._write_json("cli-visual.json", brief)
         command = [sys.executable, str(ROOT / "scripts" / "visual_kit.py")]
         prompt = subprocess.run(
             [*command, "prompt", str(self.kit), "--brief", str(brief_path)],
@@ -277,6 +370,9 @@ class ProductionWorkflowTests(unittest.TestCase):
         )
         prompt_result = json.loads(prompt.stdout)
         self.assertEqual(prompt_result["image_references"][0]["role"], "approved-character-master")
+        self.assertTrue(prompt_result["requires_user_confirmation"])
+        self.assertEqual(prompt_result["prompt"], brief["prompt_text"])
+        self.assertNotIn("读者看不见机制如何变化", prompt_result["prompt"])
 
         finalized = subprocess.run(
             [
@@ -347,7 +443,8 @@ class ProductionWorkflowTests(unittest.TestCase):
             manifest["profile_sha256"],
         )
         self.assertIn("OKX Editorial", bundle["prompt"])
-        self.assertIn('"scene_families"', bundle["prompt"])
+        self.assertNotIn('"scene_families"', bundle["prompt"])
+        self.assertTrue(bundle["requires_user_confirmation"])
         self.assertNotIn("okx-editorial-style", bundle["prompt"])
 
         archived = visual_kit._archive_final(self.kit, brief_path, MASTER_IMAGE)
@@ -355,6 +452,59 @@ class ProductionWorkflowTests(unittest.TestCase):
         record = json.loads(Path(checked["record"]).read_text(encoding="utf-8"))
         style_record = record["visual_language"]
         self.assertEqual(style_record["name"], "okx-editorial")
+        self.assertEqual(len(style_record["profile_sha256"]), 64)
+        self.assertTrue(
+            (Path(checked["record"]).parent / style_record["profile_file"]).is_file()
+        )
+
+    def test_binance_profile_matches_okx_prompt_and_archive_chain(self) -> None:
+        command = [sys.executable, str(ROOT / "scripts" / "visual_kit.py")]
+        produced = subprocess.run(
+            [*command, "style-profile", "binance-editorial"],
+            check=True,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+        )
+        manifest = json.loads(produced.stdout)
+        brief = completed_brief("binance-cli-chain")
+        brief["visual_language"] = "binance-editorial"
+        brief["brand"] = {
+            "role": "core",
+            "name": "Binance",
+            "visual_cues": "品牌黄、深黑与白色",
+        }
+        brief_path = self._write_json("binance-cli-visual.json", brief)
+
+        consumed = subprocess.run(
+            [*command, "prompt", str(self.kit), "--brief", str(brief_path)],
+            check=True,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+        )
+        bundle = json.loads(consumed.stdout)
+
+        self.assertEqual(len(bundle["image_references"]), 1)
+        self.assertEqual(
+            bundle["image_references"][0]["role"],
+            "approved-character-master",
+        )
+        self.assertEqual(bundle["visual_language"], "binance-editorial")
+        self.assertEqual(
+            bundle["style_profile"]["sha256"],
+            manifest["profile_sha256"],
+        )
+        self.assertIn("Binance Editorial", bundle["prompt"])
+        self.assertNotIn("#F0B90B", bundle["prompt"])
+        self.assertTrue(bundle["requires_user_confirmation"])
+        self.assertNotIn("binance-editorial-style", bundle["prompt"])
+
+        archived = visual_kit._archive_final(self.kit, brief_path, MASTER_IMAGE)
+        checked = visual_kit._check_visual(Path(archived["visual"]), self.kit)
+        record = json.loads(Path(checked["record"]).read_text(encoding="utf-8"))
+        style_record = record["visual_language"]
+        self.assertEqual(style_record["name"], "binance-editorial")
         self.assertEqual(len(style_record["profile_sha256"]), 64)
         self.assertTrue(
             (Path(checked["record"]).parent / style_record["profile_file"]).is_file()

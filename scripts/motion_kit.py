@@ -635,6 +635,7 @@ def _prepare(kit: Path, contract_path: Path, output_dir: Path | None = None) -> 
                 {
                     "id": group["id"],
                     "status": "pending",
+                    "requires_user_confirmation": True,
                     "prompt_file": _relative(prompt_path, stage),
                     "input_images": [
                         {"path": _relative(master_copy, stage), "role": "locked-character-master"},
@@ -687,13 +688,25 @@ def _job_map(manifest: dict[str, Any], contract: dict[str, Any]) -> dict[str, di
         job = _strict_object(
             raw_job,
             f"image job {index}",
-            {"id", "status", "prompt_file", "input_images", "output", "qa_note"},
+            {
+                "id",
+                "status",
+                "requires_user_confirmation",
+                "prompt_file",
+                "input_images",
+                "output",
+                "qa_note",
+            },
         )
         job_id = _validate_id(job["id"], f"image job {index} id")
         if job_id in mapped:
             raise MotionError(f"duplicate image job: {job_id}")
         if job["status"] not in {"pending", "complete"}:
             raise MotionError(f"unsupported image job status: {job['status']}")
+        if job["requires_user_confirmation"] is not True:
+            raise MotionError(
+                f"image job {job_id} must require user confirmation before generation"
+            )
         if not isinstance(job["input_images"], list) or not job["input_images"]:
             raise MotionError(f"image job {job_id} must contain input images")
         for image_index, item in enumerate(job["input_images"]):

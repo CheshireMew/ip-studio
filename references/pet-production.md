@@ -47,7 +47,7 @@
 "<workspace-python>" -B scripts/pet_kit.py prepare <character-kit>
 ```
 
-`prepare` 会验证角色包，自动使用角色名、当前版本、完整角色档案和主参考图，生成桌宠运行目录、身份快照、布局辅助图、十三个视觉任务及各自提示词。默认目录为：
+`prepare` 会验证角色包，使用角色名、当前版本和完整角色档案建立维护侧快照，再用主参考图与少量必要身份锚点生成桌宠运行目录、布局辅助图、十三个视觉任务及各自提示词。完整档案不复制进每个生图提示词。默认目录为：
 
 ```text
 <character-kit>/derivatives/codex-pet/<pet-id>/runs/rNNN/
@@ -73,7 +73,7 @@
 "<workspace-python>" -B scripts/pet_kit.py ready <run-dir>
 ```
 
-只生成 `ready_jobs` 中的任务。依赖顺序为：
+只处理 `ready_jobs` 中的任务。每个任务都标记 `requires_user_confirmation: true`；先读取本批实际 `prompt_file` 和全部 `input_images`，完整展示给用户并停止。用户确认后下一轮才原样生成；重试、修复或改变输入时重新展示并确认。依赖顺序为：
 
 ```text
 base
@@ -90,7 +90,7 @@ base
          └─ look-row-10
 ```
 
-每次读取 `imagegen-jobs.json` 中该任务的 `prompt_file` 和全部 `input_images`。图片的 `role` 说明它是角色参考、布局辅助、标准动作参考还是方向连续性依据。布局辅助图只规定格数、间距和安全边距，最终结果中不能出现格线、标签或辅助色。
+每次读取 `imagegen-jobs.json` 中该任务的 `prompt_file` 和全部 `input_images`。图片的 `role` 说明它是角色参考、布局辅助、标准动作参考还是方向连续性依据。布局辅助图只规定格数、间距和安全边距，最终结果中不能出现格线、标签或辅助色；提示词只保留当前任务的固定平台合同，不附带其它状态或完整角色档案。
 
 每个视觉任务只生成一个结果。可并行时最多同时处理三个彼此独立的动作条；基础图、四向锚点、第 9 行和第 10 行按依赖顺序处理。没有并行执行能力时按相同顺序串行完成，不把并行本身变成用户决策。
 

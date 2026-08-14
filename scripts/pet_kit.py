@@ -290,6 +290,20 @@ def _profile_identity(profile: dict[str, Any]) -> str:
     )
 
 
+def _compact_profile_identity(profile: dict[str, Any]) -> str:
+    anatomy = profile["anatomy"]
+    head = anatomy["head"]
+    signature_names = "、".join(
+        item["name"] for item in profile["signature_elements"]
+    )
+    return (
+        f"{profile['display_name']}，{anatomy['species_or_archetype']}；"
+        f"轮廓{anatomy['silhouette']}；比例{anatomy['proportion_system']}；"
+        f"头部{head['hair_fur_or_crown']}，眼睛{head['eyes']}；"
+        f"服装{profile['wardrobe']['summary']}；身份标志{signature_names}。"
+    )
+
+
 def _next_run_dir(kit: Path, pet_id: str) -> Path:
     root = kit / "derivatives" / "codex-pet" / pet_id / "runs"
     revision = 1
@@ -342,7 +356,7 @@ def _prepare(args: argparse.Namespace) -> dict[str, Any]:
         f"{profile['rendering']['linework']}；"
         f"{profile['rendering']['color_treatment']}"
     )
-    identity = _profile_identity(profile)
+    identity = _compact_profile_identity(profile)
     destination = (
         Path(args.output_dir).expanduser().resolve()
         if args.output_dir
@@ -474,6 +488,10 @@ def _job_map(manifest: dict[str, Any]) -> dict[str, dict[str, Any]]:
     for job in jobs:
         if not isinstance(job, dict) or not isinstance(job.get("id"), str):
             raise PetError("imagegen-jobs.json contains an invalid job")
+        if job.get("requires_user_confirmation") is not True:
+            raise PetError(
+                f"image job {job['id']} must require user confirmation before generation"
+            )
         if job["id"] in mapped:
             raise PetError(f"duplicate image job: {job['id']}")
         mapped[job["id"]] = job
