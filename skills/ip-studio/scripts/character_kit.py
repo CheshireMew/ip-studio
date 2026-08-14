@@ -19,7 +19,13 @@ from typing import Any
 
 SCHEMA_VERSION = "2.0"
 CALIBRATION_SCHEMA_VERSION = "1.0"
-REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
+SKILL_ROOT = Path(__file__).resolve().parents[1]
+SUITE_ROOT = SKILL_ROOT.parent
+REPOSITORY_ROOT = (
+    SUITE_ROOT.parent
+    if SUITE_ROOT.name == "skills" and (SUITE_ROOT.parent / ".git").exists()
+    else SKILL_ROOT
+)
 OUTPUT_ROOT = REPOSITORY_ROOT / "ip-studio-output"
 CALIBRATION_KINDS = {"turnaround", "action", "hands", "accessory"}
 CHARACTER_ID_RE = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$")
@@ -1205,6 +1211,11 @@ def _author_profile_only(profile: dict[str, Any]) -> dict[str, Any]:
     return {key: copy.deepcopy(profile[key]) for key in AUTHOR_KEY_ORDER}
 
 
+def author_profile_fields(profile: dict[str, Any]) -> dict[str, Any]:
+    """Return the stable author-owned portion of a validated character profile."""
+    return _author_profile_only(validate_locked_profile(profile))
+
+
 def _draft_template(
     character_id: str,
     display_name: str,
@@ -2114,6 +2125,11 @@ def _check_kit(kit: Path) -> dict[str, Any]:
         "history": history,
         "calibrations": calibrations,
     }
+
+
+def check_character_package(kit: Path | str) -> dict[str, Any]:
+    """Validate one locked character package through the public consumer API."""
+    return _check_kit(Path(kit).resolve())
 
 
 def _profile_for_revision(kit: Path, revision: str) -> dict[str, Any]:

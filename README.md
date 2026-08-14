@@ -1,183 +1,147 @@
-# IP Studio
+# IP Studio Skill Suite
 
-`ip-studio` 是一个可由 Codex 或兼容 AI Agent 加载的角色生产 Skill。你可以交给它零散的身份线索、一张已经认可的角色图，或一个已锁定的角色包；它会把这些材料整理成稳定角色，并继续制作传播视觉、运行时 2D 动态角色素材或 Codex v2 桌宠。
+这个仓库现在包含三个职责独立、共享同一角色包协议的 Skill。角色身份、静态内容视觉和运行时动作素材分别有自己的入口，不再由一个大而全的 Skill 同时判断和执行。
 
-它负责补全结构、生图、看图检查、重试、版本管理和文件校验。你只需要决定会改变角色身份、内容重点或既有安装的事项。
+| Skill | 负责交付的最终结果 |
+| --- | --- |
+| `ip-studio` | 创建、导入、修改、升版并锁定可长期复用的角色身份包。 |
+| `ip-visuals` | 使用已锁定角色制作并归档头像、横幅、资料卡、封面、说明图、正文插图和整篇文章配图组。 |
+| `motion-studio` | 根据真实运行时合同制作静态姿势、方向、循环、单次动作、过渡、透明帧、图集和 manifest。 |
 
-## 你会得到什么
+Codex v2 桌宠不再由本仓库维护第二套实现。需要把已锁定角色制作成桌宠时，使用专门的 `hatch-pet` Skill，并把 IP Studio 当前主参考图交给它。
 
-- **建立或修改角色**：得到完整角色档案、角色说明、单张正式主参考图和可回读的历史版本。
-- **制作衍生视觉**：得到头像、主页横幅、资料卡、文章封面、说明图或正文插图，以及对应的内容简报、生成输入和校验记录。
-- **制作动态角色素材**：根据游戏、网页或应用中的真实状态生产者和消费者，得到静态方向图、循环、单次动作、过渡、效果帧、透明 PNG 图集、逐帧文件、无损预览和运行时 manifest；不会为静态 NPC 或无方向角色虚构动作。
-- **制作 Codex 桌宠**：得到包含九组应用状态、十六个注视方向和 QA 证据的 Codex v2 宠物目录，并可在确认后安装到本机 Codex。
+## 效果预览
 
-角色包是后三条工作流的共同输入。只有一张已认可图片时，IP Studio 会先把它导入并锁定为角色包；还没有角色时，它会先完成角色设计，再回到你原本要做的视觉、动态素材或桌宠任务。
-
-**直接开始：** [安装 Skill，并选择一条可直接复制的请求](#安装与第一次使用)。
-
-## 效果展示
-
-下面用仓库内的“灯灯”示例展示稳定的角色身份、持续复用的内容视觉和 Codex v2 平台适配。动态角色的共同生产链同时适用于游戏小人、应用助手、网页角色和其它离散状态式 2D 角色；角色身份保持不变，状态、方向、动作和输出合同由目标运行环境决定。
-
-<p align="center">
-  <img src="docs/images/lantern-fox-banner.webp" alt="灯笼狐个人主页横幅示例" width="100%">
-</p>
-<p align="center"><sub>主页横幅：角色亲自用灯笼把复杂问题照亮。</sub></p>
+三个 Skill 共享同一份角色身份真源。下面的角色主参考图由 `ip-studio` 锁定，后续内容视觉由 `ip-visuals` 消费，衍生结果不会反向改写角色身份。
 
 <p align="center">
   <img src="docs/images/lantern-fox-master.webp" alt="灯笼狐正式主参考图示例" width="280">
 </p>
-<p align="center"><sub>正式主参考图：后续视觉共同读取的单张默认角色参考。</sub></p>
+<p align="center"><sub>正式主参考图：固定角色身份，不固定后续场景与动作。</sub></p>
 
 <p align="center">
-  <img src="docs/images/lantern-fox-cover.webp" alt="灯笼狐文章封面示例" width="100%">
+  <img src="docs/images/lantern-fox-banner.webp" alt="灯笼狐个人主页横幅示例" width="100%">
 </p>
-<p align="center"><sub>文章封面：同一角色继续承担内容传播任务。</sub></p>
+<p align="center"><sub>主页横幅：角色亲自承担画面中的信息关系。</sub></p>
 
 <p align="center">
-  <img src="docs/images/lantern-fox-explainer.webp" alt="同一 IP 驱动三类内容视觉的说明图示例" width="620">
+  <img src="docs/images/lantern-fox-explainer.webp" alt="同一 IP 驱动内容视觉的说明图示例" width="620">
 </p>
-<p align="center"><sub>说明图：角色直接参与信息流程，而不是站在内容旁边充当装饰。</sub></p>
+<p align="center"><sub>说明图：身份保持稳定，表达方式由当前内容决定。</sub></p>
 
 <p align="center">
-  <img src="docs/images/lantern-fox-illustration.webp" alt="身份先锁定、场景再变化的正文插图示例" width="100%">
+  <img src="docs/images/lantern-fox-illustration.webp" alt="正文插图示例" width="100%">
 </p>
-<p align="center"><sub>正文插图：固定角色身份，把动作、场景和氛围留给当前任务决定。</sub></p>
+<p align="center"><sub>正文插图：只解释当前段落最值得图像化的一项内容。</sub></p>
 
-<p align="center">
-  <img src="docs/images/lantern-fox-pet-idle.gif" alt="灯笼狐 Codex 桌宠待机动画示例" width="192"><br>
-  <sub>Codex v2 桌宠：九组应用状态、十六个注视方向和透明边缘检查。</sub>
-</p>
+## 安装
 
-## 安装与第一次使用
-
-将仓库克隆到 Codex 的个人 Skills 目录：
+先查看仓库中的三个 Skill：
 
 ```powershell
-git clone https://github.com/CheshireMew/ip-studio.git "$env:USERPROFILE\.codex\skills\ip-studio"
+npx skills add CheshireMew/ip-studio --list
 ```
 
-重新打开 Codex 后，直接描述你要得到的结果。你不需要运行仓库脚本、编辑 JSON、手动编号或整理生成文件。
-
-### 从零建立角色
-
-```text
-$ip-studio 从零为我设计并定稿一个可以长期使用的个人 IP 角色。
-```
-
-IP Studio 会先给出三条真正不同的角色方向，完成主参考图和一致性检查，再把获批结果写入本仓库已忽略的本地工作区 `ip-studio-output/<角色标识>/`。这个位置由脚本根据 IP Studio 仓库自身确定，不会因为你从另一个项目调用 Skill，就把角色文件写进那个项目。角色包锁定后即停止；只有你同时点名其它结果时，才继续制作视觉或桌宠。
-
-### 导入或修改已有角色
-
-```text
-$ip-studio 把这张已经确认的角色图导入为可长期复用的角色包。
-```
-
-```text
-$ip-studio 读取 E:\path\to\character-kit，把斗篷改成墨蓝色；其它固定特征保持不变并生成新版本。
-```
-
-导入时请附上图片，修改时请给出角色包路径。改变固定身份会建立新版本，旧版本和旧主参考图会保留。
-
-### 制作头像、主页视觉或文章配图
-
-```text
-$ip-studio 使用 E:\path\to\character-kit，为这篇文章制作一张 5:2 封面。文章内容如下：……
-```
-
-请提供角色包路径、要制作的结果，以及正文、品牌资料或其它内容真源。正式图片会归档到角色包的 `derivatives/<类型>/<视觉标识>/`；归档记录可以重新核对角色版本、内容简报、生成输入、参考资料和最终图片。衍生视觉不会反向修改角色身份，也不会自动扩展成未点名的比例或媒体。
-
-IP Studio 会在同一条流程里完成内容提炼、视觉构思、角色融合、提示词、生图、看图检查和归档。仓库当前内置“极简手绘 IP”“OKX Editorial”和“Binance Editorial”三套内容视觉语言。例如：
-
-```text
-$ip-studio 使用 E:\path\to\character-kit，根据下面的定稿做一张 1:1 OKX 风格社交配图，把我的 IP 角色融入画面：……
-```
-
-这类请求直接读取内置 `style-profile.json`，把黑白高对比、霓虹黄绿色、标题层级、构图、材质和角色融合规则编译进提示词。七张来源案例不会在日常生成时打开或传给生图模型；图片输入默认只有角色主图和当前任务素材。用户明确要求精确 OKX Logo 时，才加入已保存的透明品牌标记。
-
-币安风格使用同一套 JSON 真源和无案例图生成方式，但会根据内容只选择“黄底大众促销”或“深色专业场景”中的一种，再落到线描机制、生活方式主体、实物舞台、真实产品界面或社区嘉宾中的一个场景家族。五张来源图中的活动文案、奖励、人物、二维码、界面和物件不会进入新作品；明确要求精确 Binance 标记时，才按底色加入黄色或黑色透明品牌素材。
-
-### 制作游戏角色或应用内动态角色
-
-```text
-$ip-studio 使用 E:\path\to\character-kit，读取这个 Godot 项目中主角的真实状态机，只制作实际会触发的四方向站立、行走和工具动作，输出可直接导入的透明素材。
-```
-
-```text
-$ip-studio 把 E:\path\to\character-kit 做成前向应用助手，只需要待机、倾听、处理和完成状态，不要生成方向动画。
-```
-
-IP Studio 会先确认状态由哪里产生、方向怎样选择、哪个组件消费图片、动作效果在哪一帧发生以及用户最终看到什么，再建立 `motion-contract.json`。同一动作的方向和帧放在一张固定网格里整体生成，禁止用另一张图的脸、眼睛或肢体局部拼接“稳定”人物。正式结果包含透明 PNG 图集、逐帧 PNG、APNG、无损 WebP 和运行时 manifest；GIF 只用于临时分享，不承担颜色验收。
-
-如果用户只要素材包，检查完成后停止。如果请求包含项目接入，IP Studio 还会让真实状态生产者、manifest、运行时消费者和最终画面走通；不会从测试端直接伪造最终状态。
-
-### 制作并安装 Codex 桌宠
-
-```text
-$ip-studio 把 E:\path\to\character-kit 制作并安装为可用的 Codex v2 桌宠。
-```
-
-Codex 桌宠是动态角色系统的固定平台适配器。它会额外生成标准化动态合同、九组状态动画、十六个注视方向、动态预览、盲审和透明边缘检查，再输出只包含 `pet.json` 与 `spritesheet.webp` 的正式宠物目录。安装成功后，你只需要重新打开 Codex，并在设置中启用宠物；如果同一宠物标识已被不同内容占用，IP Studio 会先保存旧安装并请你确认是否替换。
-
-制作一般动态角色或桌宠时，工作区 Python 环境需要提供 Pillow 和 NumPy。角色档案和普通衍生视觉脚本只使用 Python 标准库。
-
-## 角色一致性怎样保持
-
-`character-profile.json` 保存角色可以被重建的结构，档案中登记的单张主参考图提供默认视觉依据。它们共同构成角色身份边界：
-
-1. 角色创建或修改先更新身份，再通过另一姿势和场景检查可复用性。
-2. 衍生视觉、动态角色和桌宠只读取当前角色档案与主参考图，并保存当次快照。
-3. 当次动作、构图、场景和氛围不会反向写回角色身份。
-4. 正式结果保留版本、输入、校验值和历史，后续任务可以重新读取和验证。
-
-## 能力边界
-
-IP Studio 当前支持风格化人形、动物、拟人、物件和幻想生物，以及与同一角色相连的社交主页视觉、文章视觉、离散状态式 2D 动态素材和 Codex v2 桌宠。动态素材可以服务游戏世界小人、应用助手、网页角色或其它逐帧状态角色，但必须存在清楚的状态、方向、事件、锚点和图片消费合同。
-
-照片级数字分身、普通个人品牌策略、没有 IP 角色参与的一般视觉、一般动效、骨骼动画、Live2D、视频和 3D 不属于当前能力范围。其它桌宠或角色平台只有能由离散状态和逐帧 2D 素材完整表达时才适用；它们的安装协议不自动获得授权。只有“制作可用的 Codex 桌宠”默认包含本机 Codex 宠物安装。
-
-## 维护者入口
-
-```text
-ip-studio/
-├─ .project-steward/project.json
-├─ SKILL.md
-├─ agents/openai.yaml
-├─ references/
-│  ├─ character-system.md
-│  ├─ visual-production.md
-│  ├─ dynamic-character-production.md
-│  └─ pet-production.md
-├─ assets/visual-languages/
-│  ├─ minimal-handdrawn/
-│  ├─ okx-editorial/
-│  └─ binance-editorial/
-└─ scripts/
-   ├─ character_kit.py
-   ├─ visual_kit.py
-   ├─ motion_kit.py
-   ├─ pet_kit.py
-   ├─ motion/
-   └─ pet/
-```
-
-`SKILL.md` 是工作流、权限边界和交付标准的正式入口；四个顶层脚本分别负责角色包、衍生视觉、通用动态素材和 Codex 桌宠适配器的机器可验证合同。修改工作流后，先检查四套命令入口仍可读取：
+安装完整套件：
 
 ```powershell
-python scripts/character_kit.py --help
-python scripts/visual_kit.py --help
-python scripts/motion_kit.py --help
-python scripts/pet_kit.py --help
+npx skills add CheshireMew/ip-studio --skill '*' -g -a codex -y
 ```
 
-角色和衍生视觉的最终验收必须读取脚本正式输出并实际看图；一般动态素材还要验证整表生产者、透明帧、图集、manifest 和目标消费者；桌宠继续验证完整 8×11 精灵表、九组动画预览、十六方向语义、盲审和安装目录。只运行帮助命令或静态检查不能代替这些真实链路。
+如果只需要建立和维护角色身份，可以只安装 `ip-studio`：
 
-## 隐私
+```powershell
+npx skills add CheshireMew/ip-studio --skill ip-studio -g -a codex -y
+```
 
-Skill 默认只读取当前请求、当前对话、用户明确提供的材料、角色文件夹，以及动态任务中与状态生产、图片消费和运行时接入直接相关的项目文件。生成的角色包、图片、QA 文件和动态运行记录保存在本仓库的 `ip-studio-output/` 本地工作区。该目录已被 Git 忽略，不属于源码，也不会被默认提交。
+`ip-visuals` 和 `motion-studio` 会调用兄弟目录中 `ip-studio` 提供的正式角色包接口，因此使用静态视觉或动态素材时应安装整个套件。
 
-公开问题或贡献代码前，请确认提交中不包含角色私有素材、文章草稿、品牌资料、绝对路径、访问令牌或生成记录。
+## 使用
 
-## 许可
+建立或修改角色身份：
 
-本项目采用 [Apache License 2.0](LICENSE)。
+```text
+$ip-studio 从零为我设计并锁定一个可以长期复用的个人 IP 角色。
+$ip-studio 把这张已经确认的角色图导入为角色包。
+$ip-studio 读取 E:\path\to\character-kit，把斗篷改成墨蓝色，其它固定特征不变并升版。
+```
+
+制作静态内容视觉：
+
+```text
+$ip-visuals 使用“夜希”为下面这段正文制作一张 16:9 横版插图：……
+$ip-visuals 使用 E:\path\to\character-kit，为这篇文章制作一组不重复的正文配图：……
+```
+
+制作运行时 2D 动作素材：
+
+```text
+$motion-studio 使用 E:\path\to\character-kit，读取这个 Godot 项目的真实状态机，只制作实际会触发的四方向站立、行走和工具动作。
+$motion-studio 把这个角色做成前向应用助手，只需要待机、倾听、处理和完成状态，不要虚构方向动画。
+```
+
+制作 Codex v2 桌宠：
+
+```text
+$hatch-pet 使用 E:\path\to\character-kit 中的当前主参考图制作 Codex v2 桌宠。
+```
+
+## 共享角色包
+
+从源码仓库运行时，`ip-studio` 把角色写入 Git 已忽略的 `ip-studio-output/<character-id>/`。从其它项目目录调用脚本不会把角色资料写进调用者项目。已安装的独立 Skill 则把本地工作区锚定在自身目录。
+
+角色包中的 `character-profile.json` 和当前版本登记的单张主参考图是唯一身份真源。`ip-visuals` 与 `motion-studio` 只读取它们，并记录自己消费的准确角色 revision；静态图、动作帧、失败图和当前场景不会反向进入角色身份。
+
+已有本地角色包不需要迁移，拆分前后的 `ip-studio-output/` 位置保持不变。
+
+## 提示词与确认规则
+
+用户已经提供完整提示词时，静态视觉流程原样传递，不追加构图、场景、动作、物件、配色、材质或装饰。没有完整提示词时，只写目标、原始材料、参考图职责、必要输出形式、固定机器协议和用户硬要求，不把维护字段、分析过程或方案理由塞进提示词。
+
+任何新图、编辑或重试都先展示实际将发送的完整提示词和有序图片输入并停止。用户确认后，才把完全相同的输入交给图像入口；输入变化就重新确认。动态素材属于批量重活，还会在开始生成前同时展示运行时依据、任务数量、输出目录、项目改动范围和验收方式。
+
+## 仓库结构
+
+```text
+skills/
+  ip-studio/
+    SKILL.md
+    agents/openai.yaml
+    references/character-system.md
+    scripts/character_kit.py
+  ip-visuals/
+    SKILL.md
+    agents/openai.yaml
+    references/visual-production.md
+    scripts/visual_kit.py
+    assets/visual-languages/
+  motion-studio/
+    SKILL.md
+    agents/openai.yaml
+    references/dynamic-character-production.md
+    scripts/motion_kit.py
+    scripts/motion/
+tests/
+archive/
+ip-studio-output/   # 本地角色与生产数据，Git 忽略
+```
+
+拆分前的单体入口位于 `archive/legacy-monolith/`，原 IP Studio 桌宠适配器位于 `archive/legacy-ip-studio-pet/`。两者只保留历史，不会被 Skill 安装器识别为活跃入口。原来的仓库根目录 `SKILL.md` 已迁移到 `skills/ip-studio/SKILL.md`。
+
+## 验证
+
+```powershell
+python -m pytest tests -q
+python ../meta-skills/scripts/quick_validate.py skills/ip-studio
+python ../meta-skills/scripts/quick_validate.py skills/ip-visuals
+python ../meta-skills/scripts/quick_validate.py skills/motion-studio
+npx skills add . --list
+```
+
+`quick_validate.py` 来自同级的 `meta-skills` 仓库；普通使用者不需要它。三套脚本均按自身文件位置寻找资源，验证时还应从仓库外目录用绝对路径调用各自的 `schema` 命令。
+
+## 隐私与许可
+
+角色包、图片、QA 文件和动态运行记录保存在 Git 已忽略的本地工作区，不应提交到公开仓库。公开问题或贡献代码前，请确认提交中不包含角色私有素材、文章草稿、品牌资料、绝对路径、访问令牌或生成记录。
+
+原创代码和 Skill 指令默认采用 [Apache License 2.0](LICENSE)。角色图片、生成媒体、视觉示例、Logo、商标和品牌素材按 [ASSET-LICENSE.md](ASSET-LICENSE.md) 及更近位置的来源或许可证说明处理。

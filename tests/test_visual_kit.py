@@ -7,7 +7,8 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "scripts"))
+IP_VISUALS_ROOT = ROOT / "skills" / "ip-visuals"
+sys.path.insert(0, str(IP_VISUALS_ROOT / "scripts"))
 
 import visual_kit  # noqa: E402
 
@@ -177,7 +178,7 @@ class OkxEditorialContractTests(unittest.TestCase):
         self.assertEqual(len(manifest["profile_sha256"]), 64)
         self.assertTrue(Path(manifest["source_notice"]).is_file())
         self.assertTrue(Path(manifest["style_guide"]).is_file())
-        provenance = ROOT / "assets" / "visual-languages" / "okx-editorial"
+        provenance = IP_VISUALS_ROOT / "assets" / "visual-languages" / "okx-editorial"
         self.assertEqual(len(list((provenance / "examples").glob("*.png"))), 7)
         self.assertTrue((provenance / "logos" / "okx-mark-white.png").is_file())
 
@@ -281,7 +282,7 @@ class BinanceEditorialContractTests(unittest.TestCase):
         self.assertTrue(Path(manifest["profile_path"]).is_file())
         self.assertTrue(Path(manifest["source_notice"]).is_file())
         self.assertTrue(Path(manifest["style_guide"]).is_file())
-        provenance = ROOT / "assets" / "visual-languages" / "binance-editorial"
+        provenance = IP_VISUALS_ROOT / "assets" / "visual-languages" / "binance-editorial"
         self.assertEqual(len(list((provenance / "examples").glob("*.png"))), 5)
         self.assertTrue(
             (provenance / "logos" / "binance-mark-yellow.png").is_file()

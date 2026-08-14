@@ -12,7 +12,10 @@ from unittest import mock
 
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "scripts"))
+IP_STUDIO_ROOT = ROOT / "skills" / "ip-studio"
+IP_VISUALS_ROOT = ROOT / "skills" / "ip-visuals"
+sys.path.insert(0, str(IP_STUDIO_ROOT / "scripts"))
+sys.path.insert(0, str(IP_VISUALS_ROOT / "scripts"))
 
 import character_kit  # noqa: E402
 import visual_kit  # noqa: E402
@@ -20,6 +23,8 @@ import visual_kit  # noqa: E402
 
 MASTER_IMAGE = (
     ROOT
+    / "skills"
+    / "ip-visuals"
     / "assets"
     / "visual-languages"
     / "minimal-handdrawn"
@@ -211,7 +216,7 @@ class RepositoryWorkspaceTests(unittest.TestCase):
             completed = subprocess.run(
                 [
                     sys.executable,
-                    str(ROOT / "scripts" / "character_kit.py"),
+                    str(IP_STUDIO_ROOT / "scripts" / "character_kit.py"),
                     "workspace",
                     "--character-id",
                     "nyxie",
@@ -237,7 +242,7 @@ class RepositoryWorkspaceTests(unittest.TestCase):
         completed = subprocess.run(
             [
                 sys.executable,
-                str(ROOT / "scripts" / "character_kit.py"),
+                str(IP_STUDIO_ROOT / "scripts" / "character_kit.py"),
                 "workspace",
                 "--character-id",
                 "../outside",
@@ -360,7 +365,7 @@ class ProductionWorkflowTests(unittest.TestCase):
         brief = completed_brief("cli-chain")
         brief["prompt_text"] = "使用角色参考图，为文章生成一张 16:9 正文插图。"
         brief_path = self._write_json("cli-visual.json", brief)
-        command = [sys.executable, str(ROOT / "scripts" / "visual_kit.py")]
+        command = [sys.executable, str(IP_VISUALS_ROOT / "scripts" / "visual_kit.py")]
         prompt = subprocess.run(
             [*command, "prompt", str(self.kit), "--brief", str(brief_path)],
             check=True,
@@ -408,7 +413,7 @@ class ProductionWorkflowTests(unittest.TestCase):
         self.assertTrue(Path(checked_result["image"]).is_file())
 
     def test_okx_json_profile_feeds_prompt_and_archive_without_style_images(self) -> None:
-        command = [sys.executable, str(ROOT / "scripts" / "visual_kit.py")]
+        command = [sys.executable, str(IP_VISUALS_ROOT / "scripts" / "visual_kit.py")]
         produced = subprocess.run(
             [*command, "style-profile", "okx-editorial"],
             check=True,
@@ -458,7 +463,7 @@ class ProductionWorkflowTests(unittest.TestCase):
         )
 
     def test_binance_profile_matches_okx_prompt_and_archive_chain(self) -> None:
-        command = [sys.executable, str(ROOT / "scripts" / "visual_kit.py")]
+        command = [sys.executable, str(IP_VISUALS_ROOT / "scripts" / "visual_kit.py")]
         produced = subprocess.run(
             [*command, "style-profile", "binance-editorial"],
             check=True,

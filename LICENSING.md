@@ -1,6 +1,6 @@
 # Licensing
 
-The existing Apache License 2.0 in LICENSE covers original source code, Skill instructions, scripts, tests, and reusable templates authored for ip-studio unless a file states otherwise.
+The Apache License 2.0 in LICENSE covers original source code, Skill instructions, scripts, tests, and reusable templates authored for the IP Studio skill suite unless a file states otherwise.
 
 Character artwork, sprites, generated media, example outputs, logos, names, and other brand or visual assets are not automatically licensed under Apache-2.0. Their applicable terms are described in ASSET-LICENSE.md or in a nearer file-specific notice.
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build, archive, and verify IP Studio derivative visuals."""
+"""Build, archive, and verify static visuals from locked IP characters."""
 
 from __future__ import annotations
 
@@ -16,10 +16,17 @@ import uuid
 from pathlib import Path
 from typing import Any
 
+SKILL_ROOT = Path(__file__).resolve().parents[1]
+IP_STUDIO_SCRIPTS = SKILL_ROOT.parent / "ip-studio" / "scripts"
+if not IP_STUDIO_SCRIPTS.is_dir():
+    raise RuntimeError(
+        "ip-visuals requires the sibling ip-studio skill and its locked-character contract"
+    )
+sys.path.insert(0, str(IP_STUDIO_SCRIPTS))
+
 import character_kit
 
 
-SKILL_ROOT = Path(__file__).resolve().parents[1]
 SCHEMA_VERSION = "1.0"
 RECORD_SCHEMA_VERSION = "2.0"
 LEGACY_RECORD_SCHEMA_VERSION = "1.0"
@@ -1435,7 +1442,7 @@ def _check_visual(
     if f"r{snapshot['revision']:03d}" != character_record["revision"]:
         raise VisualError("profile snapshot revision mismatch")
     canonical_profile = json.dumps(
-        {key: snapshot[key] for key in character_kit.AUTHOR_KEY_ORDER},
+        character_kit.author_profile_fields(snapshot),
         ensure_ascii=False,
         sort_keys=True,
         separators=(",", ":"),
@@ -1576,7 +1583,7 @@ def _check_legacy_visual(folder: Path, kit: Path) -> dict[str, Any]:
     _detect_image(output)
     if _sha256_file(output) != record["output"]["sha256"]:
         raise VisualError("legacy output SHA-256 mismatch")
-    character_kit._check_kit(kit.resolve())
+    character_kit.check_character_package(kit)
     return {"record": record, "brief": brief_path, "output": output}
 
 
