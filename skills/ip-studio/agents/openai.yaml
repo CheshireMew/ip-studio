@@ -1,4 +1,0 @@
-interface:
-  display_name: "IP Studio"
-  short_description: "创建、导入、修改并锁定可跨会话长期复用的 IP 角色身份包"
-  default_prompt: "Use $ip-studio to create, revise, or lock a reusable character identity package from my materials."

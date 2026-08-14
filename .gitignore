@@ -12,7 +12,6 @@ venv/
 Thumbs.db
 
 ip-studio-output/
-pet-studio-output/
 codex-pet-output/
 qa-output/
 tmp/

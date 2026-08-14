@@ -1,4 +1,0 @@
-interface:
-  display_name: "Motion Studio"
-  short_description: "根据真实运行环境制作、验证并打包离散状态式 2D 角色动作素材"
-  default_prompt: "Use $motion-studio to produce the exact 2D character motion assets consumed by this runtime."

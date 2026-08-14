@@ -10,7 +10,7 @@ from typing import Any
 import numpy as np
 from PIL import Image, ImageChops, ImageDraw, ImageSequence
 
-from motion.chroma_matte import key_family_mask, matte_chroma_background
+from pet.chroma_matte import key_family_mask, matte_chroma_background
 
 
 def parse_hex_color(value: str) -> tuple[int, int, int]:

@@ -18,14 +18,6 @@ from typing import Any
 
 from PIL import Image, ImageDraw
 
-SKILL_ROOT = Path(__file__).resolve().parents[1]
-IP_STUDIO_SCRIPTS = SKILL_ROOT.parent / "ip-studio" / "scripts"
-if not IP_STUDIO_SCRIPTS.is_dir():
-    raise RuntimeError(
-        "motion-studio requires the sibling ip-studio skill and its locked-character contract"
-    )
-sys.path.insert(0, str(IP_STUDIO_SCRIPTS))
-
 import character_kit
 from motion.image_pipeline import process_group_sheet, sha256
 
@@ -338,6 +330,128 @@ def contract_digest(contract: dict[str, Any]) -> str:
     return _contract_digest(contract)
 
 
+def _cells_for_rows(clip_ids: list[str], frame_counts: dict[str, int]) -> list[dict[str, Any]]:
+    cells: list[dict[str, Any]] = []
+    for row, clip_id in enumerate(clip_ids):
+        for frame in range(frame_counts[clip_id]):
+            cells.append(
+                {"row": row, "column": frame, "clip_id": clip_id, "frame": frame}
+            )
+    return cells
+
+
+def build_codex_pet_contract(display_name: str) -> dict[str, Any]:
+    """Expose Codex v2 as one fixed adapter of the shared motion contract."""
+    from pet.prepare_pet_run import LOOK_ROWS, ROWS
+
+    clips: list[dict[str, Any]] = []
+    groups: list[dict[str, Any]] = []
+    for state, _row, frames, purpose in ROWS:
+        clips.append(
+            {
+                "id": state,
+                "state": state,
+                "direction": (
+                    "screen-right"
+                    if state == "running-right"
+                    else "screen-left" if state == "running-left" else "none"
+                ),
+                "kind": "loop",
+                "frame_count": frames,
+                "durations_ms": [120] * frames,
+                "semantic": purpose,
+                "effect_events": [],
+            }
+        )
+        groups.append(
+            {
+                "id": state,
+                "rows": 1,
+                "columns": frames,
+                "registration": "bottom-center",
+                "slot_detection": "equal-grid",
+                "cells": _cells_for_rows([state], {state: frames}),
+            }
+        )
+    direction_names = {
+        "000": "up",
+        "022.5": "up-right",
+        "045": "up-right",
+        "067.5": "up-right",
+        "090": "right",
+        "112.5": "down-right",
+        "135": "down-right",
+        "157.5": "down-right",
+        "180": "down",
+        "202.5": "down-left",
+        "225": "down-left",
+        "247.5": "down-left",
+        "270": "left",
+        "292.5": "up-left",
+        "315": "up-left",
+        "337.5": "up-left",
+    }
+    for group_id, _row, directions, purpose in LOOK_ROWS:
+        cells: list[dict[str, Any]] = []
+        for column, degrees in enumerate(directions):
+            clip_id = f"look-{degrees.replace('.', '-') }"
+            clips.append(
+                {
+                    "id": clip_id,
+                    "state": "look",
+                    "direction": direction_names[degrees],
+                    "kind": "static",
+                    "frame_count": 1,
+                    "durations_ms": [120],
+                    "semantic": f"{purpose}; {degrees} degrees clockwise from up",
+                    "effect_events": [],
+                }
+            )
+            cells.append(
+                {"row": 0, "column": column, "clip_id": clip_id, "frame": 0}
+            )
+        groups.append(
+            {
+                "id": group_id,
+                "rows": 1,
+                "columns": 8,
+                "registration": "bottom-center",
+                "slot_detection": "equal-grid",
+                "cells": cells,
+            }
+        )
+    return validate_contract(
+        {
+            "schema_version": SCHEMA_VERSION,
+            "motion_id": "codex-pet-v2",
+            "display_name": f"{display_name} Codex v2 pet motion",
+            "target": {
+                "surface": "Codex desktop pet",
+                "runtime": "Codex spriteVersionNumber 2",
+                "actor_role": "stateful-application-character",
+                "camera": "front-facing desktop overlay",
+                "state_source": "Codex application pet state",
+                "direction_source": "pointer-relative look direction",
+                "consumer": "Codex v2 pet spritesheet loader",
+                "observable_result": "the selected pet state and gaze appear in Codex",
+            },
+            "canvas": {
+                "cell_width": 192,
+                "cell_height": 208,
+                "anchor_x": 96,
+                "anchor_y": 198,
+                "sprite_bounds_width": 182,
+                "sprite_bounds_height": 198,
+                "chroma_key": "#FF00FF",
+                "runtime_format": "Codex v2 8x11 lossless WebP atlas",
+                "preview_formats": ["apng", "lossless-webp"],
+            },
+            "clips": clips,
+            "groups": groups,
+        }
+    )
+
+
 def _draft_contract(motion_id: str, display_name: str) -> dict[str, Any]:
     clip_id = "required-state"
     return {
@@ -557,7 +671,7 @@ def _prepare(kit: Path, contract_path: Path, output_dir: Path | None = None) -> 
         return _check_prepared(destination)
     except Exception as error:
         if stage.exists():
-            archive = destination.parent / ".motion-studio-failed"
+            archive = destination.parent / ".ip-studio-failed"
             archive.mkdir(parents=True, exist_ok=True)
             os.replace(stage, archive / f"{destination.name}.{uuid.uuid4().hex}.failed")
         if isinstance(error, MotionError):
@@ -621,7 +735,7 @@ def _check_character_snapshot(run: Path, record: dict[str, Any]) -> None:
     source = record["source_character"]
     if profile["character_id"] != source["character_id"]:
         raise MotionError("character snapshot id mismatch")
-    author = character_kit.author_profile_fields(profile)
+    author = {key: profile[key] for key in character_kit.AUTHOR_KEY_ORDER}
     canonical = json.dumps(
         author, ensure_ascii=False, sort_keys=True, separators=(",", ":")
     ).encode("utf-8")
@@ -915,7 +1029,7 @@ def _print(value: Any) -> int:
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Build and verify runtime-grounded 2D character motion assets."
+        description="Build and verify runtime-grounded IP Studio 2D character motion."
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
     subparsers.add_parser("schema").set_defaults(handler=lambda _args: _print(_schema()))

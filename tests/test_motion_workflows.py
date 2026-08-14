@@ -11,16 +11,25 @@ from PIL import Image, ImageDraw
 
 
 ROOT = Path(__file__).resolve().parents[1]
-IP_STUDIO_ROOT = ROOT / "skills" / "ip-studio"
-MOTION_STUDIO_ROOT = ROOT / "skills" / "motion-studio"
-sys.path.insert(0, str(IP_STUDIO_ROOT / "scripts"))
-sys.path.insert(0, str(MOTION_STUDIO_ROOT / "scripts"))
+sys.path.insert(0, str(ROOT / "scripts"))
 sys.path.insert(0, str(ROOT / "tests"))
 
 import character_kit  # noqa: E402
 import motion_kit  # noqa: E402
+from pet import prepare_pet_run  # noqa: E402
 
 from test_production_workflows import MASTER_IMAGE, completed_profile  # noqa: E402
+
+
+class RepositoryOwnedPetWorkspaceTests(unittest.TestCase):
+    def test_internal_pet_preparer_does_not_use_the_callers_cwd(self) -> None:
+        destination = prepare_pet_run.default_output_dir("nyxie")
+
+        self.assertTrue(destination.is_relative_to(ROOT / "ip-studio-output"))
+        self.assertEqual(
+            destination.parent,
+            ROOT / "ip-studio-output" / "_work" / "codex-pet",
+        )
 
 
 def clip(
@@ -238,6 +247,42 @@ class MotionWorkflowTests(unittest.TestCase):
         )
         self.assertEqual({item["direction"] for item in manifest["clips"]}, {"none"})
         self.assertEqual(len(manifest["atlases"]), 1)
+
+    def test_codex_pet_prepare_materializes_the_shared_motion_contract(self) -> None:
+        run = self.root / "pet-run"
+        command = [
+            sys.executable,
+            str(ROOT / "scripts" / "pet_kit.py"),
+            "prepare",
+            str(self.kit),
+            "--output-dir",
+            str(run),
+        ]
+        completed = subprocess.run(
+            command,
+            check=True,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+        )
+        prepared = json.loads(completed.stdout)
+        normalized = motion_kit.validate_contract(
+            json.loads((run / "motion-contract.json").read_text(encoding="utf-8"))
+        )
+
+        self.assertEqual(prepared["motion_contract"], str(run / "motion-contract.json"))
+        self.assertEqual(normalized["motion_id"], "codex-pet-v2")
+        self.assertEqual(len(normalized["clips"]), 25)
+        self.assertEqual(len(normalized["groups"]), 11)
+        jobs = json.loads((run / "imagegen-jobs.json").read_text(encoding="utf-8"))["jobs"]
+        self.assertTrue(all(job["requires_user_confirmation"] for job in jobs))
+        identity = (run / "references" / "character-identity.txt").read_text(
+            encoding="utf-8"
+        )
+        self.assertNotIn("各视角", identity)
+        self.assertNotIn("遮挡", identity)
+        self.assertLess(len(identity), 500)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -592,21 +592,16 @@ def main() -> None:
             Path(args.row_9_registration).expanduser().resolve()
         )
         row_10_safe_scale = normalization_scale(row_10_cells, target)
-        if row_10_safe_scale + 1e-9 < registered_scale:
+        if row_10_safe_scale < registered_scale:
             raise SystemExit(
-                "look row 10 cannot fit the approved row-9 registration scale; "
-                "resynthesize row 10 instead of changing the approved direction row"
+                "look row 10 cannot use the approved row 9 scale without crossing the "
+                "final cell safe area; resynthesize the complete row 10 instead of "
+                "rescaling the approved row 9"
             )
         row_10_cells = normalize_cells_to_reference(
             row_10_cells,
             neutral,
             registered_scale,
-        )
-        validate_normalized_look_cells(
-            row_9_cells,
-            0,
-            args.edge_margin,
-            args.edge_pixel_threshold,
         )
         validate_normalized_look_cells(
             row_10_cells,

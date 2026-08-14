@@ -1,4 +1,0 @@
-interface:
-  display_name: "IP Visuals"
-  short_description: "使用已锁定 IP 角色制作、修订并长期归档静态内容视觉"
-  default_prompt: "Use $ip-visuals to create or revise a static visual with my locked IP character."
