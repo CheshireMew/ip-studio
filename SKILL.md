@@ -33,7 +33,7 @@ description: "创建、锁定并长期复用个人或品牌 IP 角色，并用�
 有生图但没有独立看图能力时可以交付候选，不能声称视觉检查或最终定稿通过；有看图能力时必须实际打开生产者输出，不用文字描述或消费端假数据代替图片。
 
 ## 一次性衍生视觉路径
-本路径直接消费用户提供的已认可角色图，不建立长期角色包。完整读取 `references/visual-production.md`；默认文章封面还要完整读取 `references/cover-prompt.md`。用户已有完整提示词时原样写入 `prompt_text`；否则只保留完整内容、图片职责和用户比例，比例不按类型设白名单。默认文章封面没有完整提示词时保持 `prompt_text` 为空，把全文原样写入 `content.source_text`；Agent 不预填标题、核心对象、角色动作或构图。依次运行 `python scripts/visual_kit.py schema`、`python scripts/visual_kit.py draft <brief-path> --kind <kind> --visual-id <slug> --language <language>` 和 `python scripts/visual_kit.py prompt-once <approved-character-image> --brief <brief-path>`。把输出的 `prompt` 和 `image_references` 完整展示并等待确认；确认后原样生图。一次性结果不运行 `finalize`，不写入角色包。
+本路径直接消费用户提供的已认可角色图，不建立长期角色包。完整读取 `references/visual-production.md`；默认文章封面还要完整读取 `references/cover-prompt.md`。用户已有完整提示词时原样写入 `prompt_text`；否则只保留本次成品需要的内容材料、图片职责和用户比例，比例不按类型设白名单。默认文章封面没有完整提示词时保持 `prompt_text` 为空，把本次封面需要的内容原文写入 `content.source_text`；Agent 不预填标题、核心对象、角色动作或构图。依次运行 `python scripts/visual_kit.py schema`、`python scripts/visual_kit.py draft <brief-path> --kind <kind> --visual-id <slug> --language <language>` 和 `python scripts/visual_kit.py prompt-once <approved-character-image> --brief <brief-path>`。把输出的 `prompt` 和 `image_references` 完整展示并等待确认；确认后原样生图。一次性结果不运行 `finalize`，不写入角色包。
 
 ## 角色身份主路径
 先完整读取 `references/character-system.md`。它负责单一路线角色发展、可选的极简手绘 IP 方向、正常比例动漫形象图、档案结构、生图、看图检查、复杂部件和一致性方法。
@@ -108,7 +108,7 @@ python scripts/visual_kit.py schema
 python scripts/visual_kit.py draft <brief-path> --kind <kind> --visual-id <slug> --language <language>
 ```
 
-视觉简报保留用户原始要求、完整内容材料、必要输出格式和实际图片资料。用户已经给出完整提示词时，把它原样写入 `prompt_text`；没有完整提示词时，Agent 只根据目标、完整材料、参考图职责、必要比例与用户硬要求写一条简洁准确的 `prompt_text`，不替下游图像 AI 预选视觉中心、构图、场景、动作、物件、文字层级、配色、光影、材质或装饰方法。未选择其它视觉语言的默认文章封面是唯一例外：`prompt_text` 保持为空，由正式封面模板直接消费全文、图片职责和比例，在同一次生图中完成标题与视觉叙事。角色主参考图负责身份；完整角色档案、传播分析、方案理由、失败归因和归档字段不进入普通衍生图提示词。
+视觉简报保留用户原始要求、本次成品需要的内容材料、必要输出格式和实际图片资料。用户已经给出完整提示词时，把它原样写入 `prompt_text`；没有完整提示词时，Agent 只根据目标、本次成品需要的内容材料、参考图职责、必要比例与用户硬要求写一条简洁准确的 `prompt_text`，不替下游图像 AI 预选视觉中心、构图、场景、动作、物件、文字层级、配色、光影、材质或装饰方法。未选择其它视觉语言的默认文章封面是唯一例外：`prompt_text` 保持为空，由正式封面模板直接消费这些内容材料、图片职责和比例，在同一次生图中完成标题与视觉叙事。角色主参考图负责身份；完整角色档案、传播分析、方案理由、失败归因和归档字段不进入普通衍生图提示词。
 
 整篇文章配图不逐段盲目出图。先运行 `plan-schema` 和 `plan-draft`，从全文找出互不重复的认知锚点，为每项记录正文插入位置与原文片段，再用 `materialize-plan` 生成按正文顺序排列的现有 `article-illustration` 简报。数量由锚点决定，不套固定张数。完整命令和结构选择见 reference。
 

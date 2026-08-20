@@ -164,7 +164,7 @@ class PromptHygieneTests(unittest.TestCase):
         self.assertNotIn("推动压机", prompt)
         self.assertNotIn("保持克制", prompt)
 
-    def test_default_cover_uses_the_full_article_template(self) -> None:
+    def test_default_cover_uses_the_template_and_selected_content(self) -> None:
         brief = completed_brief("cover")
         brief["composition"]["aspect_ratio"] = "16:9"
         brief["composition"]["title"] = "这不是预先规定的标题"
