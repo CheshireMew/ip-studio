@@ -20,7 +20,7 @@ import character_kit
 
 
 SKILL_ROOT = Path(__file__).resolve().parents[1]
-ARTICLE_COVER_TEMPLATE = SKILL_ROOT / "references" / "article-cover-prompt.md"
+ARTICLE_COVER_TEMPLATE = SKILL_ROOT / "references" / "cover-prompt.md"
 SCHEMA_VERSION = "1.0"
 RECORD_SCHEMA_VERSION = "2.0"
 LEGACY_RECORD_SCHEMA_VERSION = "1.0"

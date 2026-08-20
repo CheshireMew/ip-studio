@@ -33,7 +33,7 @@ description: "创建、锁定并长期复用个人或品牌 IP 角色，并用�
 有生图但没有独立看图能力时可以交付候选，不能声称视觉检查或最终定稿通过；有看图能力时必须实际打开生产者输出，不用文字描述或消费端假数据代替图片。
 
 ## 一次性衍生视觉路径
-本路径直接消费用户提供的已认可角色图，不建立长期角色包。完整读取 `references/visual-production.md`；默认文章封面还要完整读取 `references/article-cover-prompt.md`。用户已有完整提示词时原样写入 `prompt_text`；否则只保留完整内容、图片职责和用户比例，比例不按类型设白名单。默认文章封面没有完整提示词时保持 `prompt_text` 为空，把全文原样写入 `content.source_text`；Agent 不预填标题、核心对象、角色动作或构图。依次运行 `python scripts/visual_kit.py schema`、`python scripts/visual_kit.py draft <brief-path> --kind <kind> --visual-id <slug> --language <language>` 和 `python scripts/visual_kit.py prompt-once <approved-character-image> --brief <brief-path>`。把输出的 `prompt` 和 `image_references` 完整展示并等待确认；确认后原样生图。一次性结果不运行 `finalize`，不写入角色包。
+本路径直接消费用户提供的已认可角色图，不建立长期角色包。完整读取 `references/visual-production.md`；默认文章封面还要完整读取 `references/cover-prompt.md`。用户已有完整提示词时原样写入 `prompt_text`；否则只保留完整内容、图片职责和用户比例，比例不按类型设白名单。默认文章封面没有完整提示词时保持 `prompt_text` 为空，把全文原样写入 `content.source_text`；Agent 不预填标题、核心对象、角色动作或构图。依次运行 `python scripts/visual_kit.py schema`、`python scripts/visual_kit.py draft <brief-path> --kind <kind> --visual-id <slug> --language <language>` 和 `python scripts/visual_kit.py prompt-once <approved-character-image> --brief <brief-path>`。把输出的 `prompt` 和 `image_references` 完整展示并等待确认；确认后原样生图。一次性结果不运行 `finalize`，不写入角色包。
 
 ## 角色身份主路径
 先完整读取 `references/character-system.md`。它负责单一路线角色发展、可选的极简手绘 IP 方向、正常比例动漫形象图、档案结构、生图、看图检查、复杂部件和一致性方法。

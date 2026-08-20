@@ -175,7 +175,7 @@ class PromptHygieneTests(unittest.TestCase):
         validated = visual_kit._validate_brief(brief, ROOT)
         prompt = visual_kit._render_task(validated)
 
-        self.assertIn("直接生成一张 16:9 横版二次元文章封面图", prompt)
+        self.assertIn("直接生成一张 16:9 横版二次元封面图", prompt)
         self.assertIn("自动提炼一个包含核心对象与关键变化的主标题", prompt)
         self.assertIn("完成判断后直接生成最终封面，不输出分析过程", prompt)
         self.assertIn(brief["content"]["source_text"], prompt)
@@ -218,7 +218,7 @@ class PromptHygieneTests(unittest.TestCase):
             bundle["image_references"][0]["role"],
             "provided-character-reference",
         )
-        self.assertIn("16:9 横版二次元文章封面图", bundle["prompt"])
+        self.assertIn("16:9 横版二次元封面图", bundle["prompt"])
 
     def test_prompt_once_cli_returns_the_same_one_off_contract(self) -> None:
         reference = (
@@ -257,7 +257,7 @@ class PromptHygieneTests(unittest.TestCase):
         self.assertEqual(payload["status"], "PASS")
         self.assertEqual(payload["mode"], "one-off")
         self.assertEqual(payload["image_references"][0]["path"], str(reference))
-        self.assertIn("16:9 横版二次元文章封面图", payload["prompt"])
+        self.assertIn("16:9 横版二次元封面图", payload["prompt"])
 
     def test_schema_reports_defaults_without_ratio_restrictions(self) -> None:
         schema = visual_kit._schema()
