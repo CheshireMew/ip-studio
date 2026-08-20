@@ -312,6 +312,58 @@ class ProductionWorkflowTests(unittest.TestCase):
         self.assertNotIn("一致性约束", bundle["prompt"])
         self.assertLess(len(bundle["prompt"]), 300)
 
+    def test_master_prompt_rebuilds_an_established_identity(self) -> None:
+        profile = completed_profile()
+        profile["anatomy"]["proportion_system"] = "正常动漫比例，约七头身"
+        profile_path = self._write_json("normal-anime-profile.json", profile)
+
+        bundle = character_kit.build_prompt_bundle(profile_path, "master")
+
+        self.assertTrue(bundle["requires_user_confirmation"])
+        self.assertIn("已经确定的角色档案", bundle["prompt"])
+        self.assertIn("不是从零设计", bundle["prompt"])
+        self.assertIn("正式动漫角色主参考图", bundle["prompt"])
+        self.assertIn("有张力姿态", bundle["prompt"])
+        self.assertIn("明确重心", bundle["prompt"])
+        self.assertIn("有表现力的表情", bundle["prompt"])
+        self.assertIn("不使用Q版", bundle["prompt"])
+        self.assertNotIn("中性站姿、干净浅色背景", bundle["prompt"])
+        self.assertNotIn("正面或轻微三分之四视角", bundle["prompt"])
+
+    def test_documented_creation_flow_approves_image_before_profile(self) -> None:
+        skill_text = (ROOT / "SKILL.md").read_text(encoding="utf-8")
+        image_stage = skill_text.index("### 1. 先得到可判断的角色形象")
+        profile_stage = skill_text.index("### 2. 从获批图片建立身份真源")
+
+        self.assertLess(image_stage, profile_stage)
+        self.assertIn("从零创建时不要先创建或填写 `character-profile.json`", skill_text)
+        self.assertIn("只有用户认可第一张形象", skill_text)
+
+    def test_character_design_preserves_source_art_anchors(self) -> None:
+        skill_text = (ROOT / "SKILL.md").read_text(encoding="utf-8")
+        method_text = (ROOT / "references" / "character-system.md").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("已经形成的美术锚点", skill_text)
+        self.assertIn("必须继承的认知资产", skill_text)
+        self.assertIn("不为了显得原创而改变四肢、器官和人体连接方式", skill_text)
+        self.assertIn("IP 角色首先是一套能够被反复看见、反复画出", method_text)
+        self.assertIn("不因为常见而需要回避", method_text)
+        self.assertIn("所有方向共享同一组固定美术锚点", method_text)
+        self.assertNotIn("把设计压到一个主要轮廓特征", method_text)
+        self.assertNotIn("每个方向必须改变角色形态", method_text)
+
+    def test_documented_one_off_image_bypasses_profiles_and_prompt_expansion(self) -> None:
+        skill_text = (ROOT / "SKILL.md").read_text(encoding="utf-8")
+
+        self.assertIn("**一次性角色图**", skill_text)
+        self.assertIn("不得创建工作区、角色档案、角色包、版本、历史或一致性测试", skill_text)
+        self.assertIn("用户说明图片以后可能用于某个项目，不等于要求现在建立角色包", skill_text)
+        self.assertIn("有参考图时由图片承担已经可见的角色外观", skill_text)
+        self.assertIn("不把头脸、发型、身体、服装、配色、材质、标志物或视角结构重新翻译成文字", skill_text)
+        self.assertIn("字符数、哈希和其它校验记录留在内部", skill_text)
+
     def test_visual_revision_keeps_parent_and_uses_previous_image(self) -> None:
         brief_path = self._write_json("visual-r1.json", completed_brief("revision-test"))
         first = visual_kit._archive_final(self.kit, brief_path, MASTER_IMAGE)

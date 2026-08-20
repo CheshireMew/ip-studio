@@ -20,6 +20,7 @@ import character_kit
 
 
 SKILL_ROOT = Path(__file__).resolve().parents[1]
+ARTICLE_COVER_TEMPLATE = SKILL_ROOT / "references" / "article-cover-prompt.md"
 SCHEMA_VERSION = "1.0"
 RECORD_SCHEMA_VERSION = "2.0"
 LEGACY_RECORD_SCHEMA_VERSION = "1.0"
@@ -97,14 +98,6 @@ STRUCTURES = {
         "comparison",
         "local-scene",
     },
-}
-ALLOWED_RATIOS = {
-    "avatar": {"1:1"},
-    "profile-banner": {"3:1", "5:2", "16:9", "4:1"},
-    "profile-card": {"4:5", "3:4", "1:1"},
-    "cover": {"5:2"},
-    "explainer": {"1:1", "4:5", "3:4", "16:9"},
-    "article-illustration": {"16:9"},
 }
 DEFAULTS = {
     "avatar": ("1:1", "badge"),
@@ -270,6 +263,22 @@ def _text(
     if len(cleaned) > maximum:
         _fail(path, f"must not exceed {maximum} characters")
     return cleaned
+
+
+def _verbatim_text(
+    value: Any,
+    path: str,
+    *,
+    optional: bool = False,
+    maximum: int = 100000,
+) -> str:
+    if not isinstance(value, str):
+        _fail(path, "must be a string")
+    if not value.strip() and not optional:
+        _fail(path, "must not be empty")
+    if len(value) > maximum:
+        _fail(path, f"must not exceed {maximum} characters")
+    return value
 
 
 def _text_list(
@@ -629,7 +638,7 @@ def _validate_brief(data: Any, base_dir: Path) -> dict[str, Any]:
     brief["language"] = _text(
         brief["language"], "$.language", maximum=32
     )
-    brief["prompt_text"] = _text(
+    brief["prompt_text"] = _verbatim_text(
         brief["prompt_text"], "$.prompt_text", optional=True, maximum=100000
     )
     visual_language = _text(
@@ -643,14 +652,14 @@ def _validate_brief(data: Any, base_dir: Path) -> dict[str, Any]:
     brief["visual_language"] = visual_language
 
     content = _require_object(brief["content"], "$.content", CONTENT_KEYS)
-    prompt_is_complete = bool(brief["prompt_text"])
+    prompt_is_complete = bool(brief["prompt_text"].strip())
     content["source_label"] = _text(
         content["source_label"],
         "$.content.source_label",
         optional=prompt_is_complete,
         maximum=500,
     )
-    content["source_text"] = _text(
+    content["source_text"] = _verbatim_text(
         content["source_text"],
         "$.content.source_text",
         optional=prompt_is_complete,
@@ -686,10 +695,10 @@ def _validate_brief(data: Any, base_dir: Path) -> dict[str, Any]:
         "$.composition.aspect_ratio",
         maximum=16,
     )
-    if not RATIO_RE.fullmatch(ratio) or ratio not in ALLOWED_RATIOS[kind]:
+    if not RATIO_RE.fullmatch(ratio):
         _fail(
             "$.composition.aspect_ratio",
-            f"must be one of: {', '.join(sorted(ALLOWED_RATIOS[kind]))}",
+            "must use positive integer width:height, such as 16:9",
         )
     composition["aspect_ratio"] = ratio
 
@@ -743,16 +752,6 @@ def _validate_brief(data: Any, base_dir: Path) -> dict[str, Any]:
         optional=True,
         maximum=3000,
     )
-
-    if kind == "cover" and composition["title"]:
-        compact_title = re.sub(r"\s+", "", composition["title"])
-        if not 6 <= len(compact_title) <= 16:
-            _fail(
-                "$.composition.title",
-                "must contain 6-16 visible characters for a cover",
-            )
-        if composition["title"].count("\n") > 1:
-            _fail("$.composition.title", "must use at most two lines")
 
     action = _require_object(
         brief["character_action"], "$.character_action", ACTION_KEYS
@@ -860,11 +859,44 @@ def _uses_visual_language(brief: dict[str, Any], language: str) -> bool:
     return _selected_visual_language(brief) == language
 
 
+def _render_article_cover_task(brief: dict[str, Any]) -> str:
+    if not ARTICLE_COVER_TEMPLATE.is_file():
+        raise VisualError(
+            f"article cover prompt template does not exist: {ARTICLE_COVER_TEMPLATE}"
+        )
+    template = ARTICLE_COVER_TEMPLATE.read_text(encoding="utf-8").rstrip("\r\n")
+    replacements = {
+        "{{aspect_ratio}}": brief["composition"]["aspect_ratio"],
+        "{{upload_materials}}": "\n".join(
+            [
+                "- 第 1 张图片是个人 IP 角色参考图。",
+                *[
+                    f"- 第 {index} 张图片用于：{reference['role']}。"
+                    for index, reference in enumerate(
+                        brief["references"], start=2
+                    )
+                ],
+            ]
+        ),
+        "{{content_material}}": brief["content"]["source_text"],
+    }
+    for placeholder, value in replacements.items():
+        if template.count(placeholder) != 1:
+            raise VisualError(
+                f"article cover prompt template must contain {placeholder} exactly once"
+            )
+        template = template.replace(placeholder, value)
+    return template
+
+
 def _render_task(brief: dict[str, Any]) -> str:
     """Return the exact concise prompt that will be shown before generation."""
-    prompt_text = brief.get("prompt_text", "").strip()
-    if prompt_text:
+    prompt_text = brief.get("prompt_text", "")
+    if prompt_text.strip():
         return prompt_text
+
+    if brief["kind"] == "cover" and _selected_visual_language(brief) == "default":
+        return _render_article_cover_task(brief)
 
     kind_labels = {
         "avatar": "社交头像",
@@ -957,6 +989,53 @@ def build_visual_bundle(
         "master_reference": character["master_reference"],
         "master_sha256": character["master_sha256"],
         "prompt_sha256": prompt_sha256,
+        "prompt_characters": len(task),
+        "requires_user_confirmation": True,
+        "image_references": image_references,
+        "prompt": task,
+        "brief": brief,
+    }
+
+
+def build_one_off_visual_bundle(
+    character_reference: Path,
+    brief_data: Any,
+    base_dir: Path,
+) -> dict[str, Any]:
+    brief = _validate_brief(brief_data, base_dir)
+    reference = character_reference.resolve()
+    if not reference.is_file():
+        raise VisualError(f"character reference does not exist: {reference}")
+    task = _render_task(brief)
+    image_references = [
+        {
+            "index": 1,
+            "role": "provided-character-reference",
+            "path": str(reference),
+            "sha256": _sha256_file(reference),
+            "source": "one-off-character-reference",
+            "brief_index": None,
+        }
+    ]
+    for brief_index, item in enumerate(brief["references"]):
+        path = Path(item["path"]).resolve()
+        image_references.append(
+            {
+                "index": brief_index + 2,
+                "role": item["role"],
+                "path": str(path),
+                "sha256": _sha256_file(path),
+                "source": "brief",
+                "brief_index": brief_index,
+            }
+        )
+    return {
+        "status": "PASS",
+        "mode": "one-off",
+        "visual_id": brief["visual_id"],
+        "kind": brief["kind"],
+        "visual_language": _selected_visual_language(brief),
+        "prompt_sha256": _sha256_bytes(task.encode("utf-8")),
         "prompt_characters": len(task),
         "requires_user_confirmation": True,
         "image_references": image_references,
@@ -2014,8 +2093,12 @@ def _schema() -> dict[str, Any]:
         "schema_version": SCHEMA_VERSION,
         "kinds": sorted(KINDS),
         "required_top_level_fields": sorted(TOP_KEYS),
-        "allowed_ratios": {
-            key: sorted(value) for key, value in ALLOWED_RATIOS.items()
+        "aspect_ratio": {
+            "format": "positive-integer-width:positive-integer-height",
+            "restricted": False,
+            "defaults": {
+                key: value[0] for key, value in DEFAULTS.items()
+            },
         },
         "allowed_structures": {
             key: sorted(value) for key, value in STRUCTURES.items()
@@ -2110,6 +2193,18 @@ def _command_prompt(args: argparse.Namespace) -> int:
     brief_path = Path(args.brief)
     bundle = build_visual_bundle(
         Path(args.kit),
+        _load_json(brief_path),
+        brief_path.parent,
+    )
+    printable = {key: value for key, value in bundle.items() if key != "brief"}
+    print(json.dumps(printable, ensure_ascii=False, indent=2))
+    return 0
+
+
+def _command_prompt_once(args: argparse.Namespace) -> int:
+    brief_path = Path(args.brief)
+    bundle = build_one_off_visual_bundle(
+        Path(args.character_reference),
         _load_json(brief_path),
         brief_path.parent,
     )
@@ -2274,6 +2369,17 @@ def _build_parser() -> argparse.ArgumentParser:
     prompt_parser.add_argument("kit")
     prompt_parser.add_argument("--brief", required=True)
     prompt_parser.set_defaults(handler=_command_prompt)
+
+    prompt_once_parser = subparsers.add_parser(
+        "prompt-once",
+        help=(
+            "Build a one-off generation prompt from a supplied character reference "
+            "without creating a character kit."
+        ),
+    )
+    prompt_once_parser.add_argument("character_reference")
+    prompt_once_parser.add_argument("--brief", required=True)
+    prompt_once_parser.set_defaults(handler=_command_prompt_once)
 
     revision_prompt_parser = subparsers.add_parser(
         "revision-prompt",

@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import copy
+import json
+import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -160,6 +163,108 @@ class PromptHygieneTests(unittest.TestCase):
         self.assertNotIn("信息为什么没有变成行动", prompt)
         self.assertNotIn("推动压机", prompt)
         self.assertNotIn("保持克制", prompt)
+
+    def test_default_cover_uses_the_full_article_template(self) -> None:
+        brief = completed_brief("cover")
+        brief["composition"]["aspect_ratio"] = "16:9"
+        brief["composition"]["title"] = "这不是预先规定的标题"
+        brief["content"]["source_text"] = (
+            "PuppetLoom 把分层角色素材变成可验证、可校准的动态角色。\n\n"
+        )
+
+        validated = visual_kit._validate_brief(brief, ROOT)
+        prompt = visual_kit._render_task(validated)
+
+        self.assertIn("直接生成一张 16:9 横版二次元文章封面图", prompt)
+        self.assertIn("自动提炼一个包含核心对象与关键变化的主标题", prompt)
+        self.assertIn("完成判断后直接生成最终封面，不输出分析过程", prompt)
+        self.assertIn(brief["content"]["source_text"], prompt)
+        self.assertNotIn(brief["composition"]["title"], prompt)
+        self.assertNotIn(brief["character_action"]["action"], prompt)
+        self.assertNotIn("为页面标题保留", prompt)
+        self.assertNotIn("不要生成任何文字", prompt)
+
+    def test_every_visual_kind_accepts_any_positive_integer_ratio(self) -> None:
+        for kind in sorted(visual_kit.KINDS):
+            with self.subTest(kind=kind):
+                brief = completed_brief(kind)
+                brief["composition"]["aspect_ratio"] = "37:11"
+                validated = visual_kit._validate_brief(brief, ROOT)
+                self.assertEqual(
+                    validated["composition"]["aspect_ratio"], "37:11"
+                )
+
+    def test_one_off_cover_uses_supplied_character_without_a_kit(self) -> None:
+        reference = (
+            ROOT
+            / "assets"
+            / "visual-languages"
+            / "okx-editorial"
+            / "logos"
+            / "okx-mark-white.png"
+        )
+        brief = completed_brief("cover")
+        brief["composition"]["aspect_ratio"] = "16:9"
+
+        bundle = visual_kit.build_one_off_visual_bundle(
+            reference,
+            brief,
+            ROOT,
+        )
+
+        self.assertEqual(bundle["mode"], "one-off")
+        self.assertEqual(bundle["image_references"][0]["path"], str(reference))
+        self.assertEqual(
+            bundle["image_references"][0]["role"],
+            "provided-character-reference",
+        )
+        self.assertIn("16:9 横版二次元文章封面图", bundle["prompt"])
+
+    def test_prompt_once_cli_returns_the_same_one_off_contract(self) -> None:
+        reference = (
+            ROOT
+            / "assets"
+            / "visual-languages"
+            / "okx-editorial"
+            / "logos"
+            / "okx-mark-white.png"
+        )
+        brief = completed_brief("cover")
+        brief["composition"]["aspect_ratio"] = "16:9"
+        with tempfile.TemporaryDirectory() as directory:
+            brief_path = Path(directory) / "cover.json"
+            brief_path.write_text(
+                json.dumps(brief, ensure_ascii=False),
+                encoding="utf-8",
+            )
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    str(ROOT / "scripts" / "visual_kit.py"),
+                    "prompt-once",
+                    str(reference),
+                    "--brief",
+                    str(brief_path),
+                ],
+                cwd=ROOT,
+                check=True,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+            )
+
+        payload = json.loads(completed.stdout)
+        self.assertEqual(payload["status"], "PASS")
+        self.assertEqual(payload["mode"], "one-off")
+        self.assertEqual(payload["image_references"][0]["path"], str(reference))
+        self.assertIn("16:9 横版二次元文章封面图", payload["prompt"])
+
+    def test_schema_reports_defaults_without_ratio_restrictions(self) -> None:
+        schema = visual_kit._schema()
+
+        self.assertFalse(schema["aspect_ratio"]["restricted"])
+        self.assertEqual(schema["aspect_ratio"]["defaults"]["cover"], "5:2")
+        self.assertNotIn("allowed_ratios", schema)
 
 
 class OkxEditorialContractTests(unittest.TestCase):

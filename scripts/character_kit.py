@@ -1870,8 +1870,15 @@ def _render_compact_generation_prompt(
             for item in profile["signature_elements"]
         )
         lines = [
-            "生成一张正式角色主参考图：单角色、完整全身、正面或轻微三分之四视角、"
-            "中性站姿、干净浅色背景。",
+            (
+                "根据已经确定的角色档案重建一张正式动漫角色主参考图：这是一项"
+                "已有形象或既定档案的恢复或重绘，不是从零设计。使用单角色、"
+                "档案中的正式比例和完整全身。采用能体现角色性格与核心轮廓的"
+                "有张力姿态、明确重心、富有动势的构图和有表现力的表情；让所有"
+                "固定身份特征及其连接保持清楚可见。背景简洁但可以包含支持角色"
+                "气氛的必要环境。除非用户或档案明确要求，不使用Q版、中性站桩、"
+                "设定表式陈列或多视图。"
+            ),
             (
                 f"角色：{display_name}，{anatomy['species_or_archetype']}；"
                 f"体型{anatomy['overall_build']}；比例{anatomy['proportion_system']}；"
@@ -1902,8 +1909,19 @@ def _render_compact_generation_prompt(
         for item in profile["signature_elements"]
     )
     lines = [
-        "Create one official character master reference: one full-body character, "
-        "front or slight three-quarter view, neutral stance, clean light background.",
+        (
+            "Rebuild one official anime character master reference from the already "
+            "determined character profile. This is recovery or redrawing for an existing "
+            "identity, not open-ended character design. Show one full-body character "
+            "using the profile's final proportions. Give the character a visually tense "
+            "pose, a clear center of "
+            "gravity, dynamic composition, and an expressive face that reveal the "
+            "personality and core silhouette. Keep every fixed identity feature and "
+            "connection clearly visible. Use a restrained background with only the "
+            "atmosphere the character needs. Unless the user or profile explicitly "
+            "requires it, do not use chibi proportions, a neutral standing pose, a "
+            "model-sheet presentation, or multiple views."
+        ),
         (
             f"Character: {display_name}, {anatomy['species_or_archetype']}; "
             f"build {anatomy['overall_build']}; proportions {anatomy['proportion_system']}; "
