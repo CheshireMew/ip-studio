@@ -263,6 +263,7 @@ class PromptHygieneTests(unittest.TestCase):
         schema = visual_kit._schema()
 
         self.assertFalse(schema["aspect_ratio"]["restricted"])
+        self.assertNotIn("archive_contract", schema)
         self.assertEqual(schema["aspect_ratio"]["defaults"]["cover"], "5:2")
         self.assertNotIn("allowed_ratios", schema)
 
@@ -274,6 +275,10 @@ class OkxEditorialContractTests(unittest.TestCase):
         self.assertEqual(manifest["status"], "PASS")
         self.assertNotIn("brief_references", manifest)
         self.assertEqual(manifest["profile"]["visual_language"], "okx-editorial")
+        self.assertIn(
+            "OKX 品牌编辑视觉",
+            manifest["profile"]["generation_text"],
+        )
         self.assertEqual(
             manifest["profile"]["prompt"]["palette"][-1]["hex"],
             "#BBFF2F",
@@ -304,11 +309,14 @@ class OkxEditorialContractTests(unittest.TestCase):
         )
         self.assertEqual(validated["composition"]["aspect_ratio"], "1:1")
         self.assertEqual(validated["references"], [])
-        self.assertIn("OKX Editorial", prompt)
+        self.assertIn("OKX 品牌编辑视觉", prompt)
+        self.assertIn("第 2 张图片用于：默认使用的 OKX 白色标记", prompt)
+        self.assertIn("这张图最值得让人看懂什么", prompt)
+        self.assertIn("哪些信息必须保留、哪些可以省略", prompt)
+        self.assertIn("什么版式最适合表达", prompt)
         self.assertNotIn("#BBFF2F", prompt)
         self.assertNotIn('"scene_families"', prompt)
         self.assertNotIn("不能出现白边、毛边、漂浮感或独立清晰度", prompt)
-        self.assertNotIn("第 2 张图片", prompt)
         for copied_reference_text in ("AI CapEx", "MRVL", "618", "双币赢"):
             self.assertNotIn(copied_reference_text, prompt)
 
@@ -378,6 +386,10 @@ class BinanceEditorialContractTests(unittest.TestCase):
             manifest["profile"]["visual_language"],
             "binance-editorial",
         )
+        self.assertIn(
+            "币安品牌编辑视觉",
+            manifest["profile"]["generation_text"],
+        )
         self.assertEqual(
             manifest["profile"]["prompt"]["palette"][0]["hex"],
             "#F0B90B",
@@ -412,12 +424,14 @@ class BinanceEditorialContractTests(unittest.TestCase):
             visual_kit._uses_visual_language(validated, "binance-editorial")
         )
         self.assertEqual(validated["references"], [])
-        self.assertIn("Binance Editorial", prompt)
+        self.assertIn("币安品牌编辑视觉", prompt)
+        self.assertIn("第 2 张图片用于：适用于深色背景的 Binance 黄色标记", prompt)
+        self.assertIn("第 3 张图片用于：适用于黄色或浅色背景的 Binance 黑色标记", prompt)
+        self.assertIn("这张图最值得让人看懂什么", prompt)
+        self.assertIn("不要机械地把原文全部塞进图片", prompt)
         self.assertNotIn("#F0B90B", prompt)
         self.assertNotIn('"scene_families"', prompt)
-        self.assertNotIn("黄底大众促销", prompt)
         self.assertNotIn("没有真实资料时不虚构产品截图", prompt)
-        self.assertNotIn("第 2 张图片", prompt)
         for copied_reference_text in (
             "UNITAS",
             "网球套装",

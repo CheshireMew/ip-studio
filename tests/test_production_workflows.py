@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-import copy
 import json
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -362,104 +360,96 @@ class ProductionWorkflowTests(unittest.TestCase):
         self.assertIn("用户说明图片以后可能用于某个项目，不等于要求现在建立角色包", skill_text)
         self.assertIn("有参考图时由图片承担已经可见的角色外观", skill_text)
         self.assertIn("不把头脸、发型、身体、服装、配色、材质、标志物或视角结构重新翻译成文字", skill_text)
-        self.assertIn("字符数、哈希和其它校验记录留在内部", skill_text)
+        self.assertIn("脚本返回的路径、角色编号、Schema、状态和其它内部字段不展示", skill_text)
 
-    def test_visual_revision_keeps_parent_and_uses_previous_image(self) -> None:
-        brief_path = self._write_json("visual-r1.json", completed_brief("revision-test"))
-        first = visual_kit._archive_final(self.kit, brief_path, MASTER_IMAGE)
-        revised_brief = completed_brief("revision-test")
-        revised_brief["composition"]["title"] = "只改这个标题"
-        revised_path = self._write_json("visual-r2.json", revised_brief)
-
-        with self.assertRaisesRegex(
-            visual_kit.VisualError, "newly locked character revision"
-        ):
-            visual_kit._revision_bundle(
-                self.kit,
-                Path(first["visual"]),
-                revised_brief,
-                self.root,
-                "character-revision",
-                "错误地把局部修改声明成角色升版",
-            )
-
-        prompt_bundle, _ = visual_kit._revision_bundle(
-            self.kit,
-            Path(first["visual"]),
-            revised_brief,
-            self.root,
-            "local-rendering",
-            "删掉旧标题，其他不变",
-        )
-        second = visual_kit._revise_visual(
-            self.kit,
-            Path(first["visual"]),
-            revised_path,
-            MASTER_IMAGE,
-            "local-rendering",
-            "删掉旧标题，其他不变",
-        )
-
-        self.assertEqual(first["revision"], "r001")
-        self.assertEqual(second["revision"], "r002")
-        self.assertTrue(Path(first["visual"], "revisions", "r001", "final.png").is_file())
-        self.assertEqual(prompt_bundle["image_references"][1]["role"], "previous-visual")
-        record = json.loads(Path(second["record"]).read_text(encoding="utf-8"))
-        self.assertEqual(record["revision"]["change_scope"], "local-rendering")
-        self.assertEqual(record["generation"]["input_references"][1]["source"], "previous-visual")
-
-    def test_cli_prompt_finalize_and_check_share_one_archive_contract(self) -> None:
-        brief = completed_brief("cli-chain")
+    def test_static_prompt_returns_only_generation_inputs_without_derivative_writes(self) -> None:
+        brief = completed_brief("direct-delivery")
         brief["prompt_text"] = "使用角色参考图，为文章生成一张 16:9 正文插图。"
-        brief_path = self._write_json("cli-visual.json", brief)
+        brief_path = self._write_json("direct-delivery.json", brief)
         command = [sys.executable, str(ROOT / "scripts" / "visual_kit.py")]
-        prompt = subprocess.run(
+        derivatives = self.kit / "derivatives"
+
+        self.assertFalse(derivatives.exists())
+        completed = subprocess.run(
             [*command, "prompt", str(self.kit), "--brief", str(brief_path)],
             check=True,
             capture_output=True,
             text=True,
             encoding="utf-8",
         )
-        prompt_result = json.loads(prompt.stdout)
-        self.assertEqual(prompt_result["image_references"][0]["role"], "approved-character-master")
-        self.assertTrue(prompt_result["requires_user_confirmation"])
-        self.assertEqual(prompt_result["prompt"], brief["prompt_text"])
-        self.assertNotIn("读者看不见机制如何变化", prompt_result["prompt"])
+        result = json.loads(completed.stdout)
 
-        finalized = subprocess.run(
+        self.assertEqual(
+            set(result),
+            {
+                "status",
+                "visual_id",
+                "kind",
+                "visual_language",
+                "character_id",
+                "character_revision",
+                "requires_user_confirmation",
+                "image_references",
+                "prompt",
+            },
+        )
+        self.assertEqual(result["prompt"], brief["prompt_text"])
+        self.assertEqual(
+            result["image_references"],
             [
-                *command,
-                "finalize",
-                str(self.kit),
-                "--brief",
-                str(brief_path),
-                "--image",
-                str(MASTER_IMAGE),
+                {
+                    "index": 1,
+                    "role": "approved-character-master",
+                    "path": str((self.kit / "master" / "master-r001.png").resolve()),
+                }
             ],
+        )
+        self.assertFalse(derivatives.exists())
+        for archive_key in (
+            "style_profile",
+            "profile",
+            "profile_sha256",
+            "master_reference",
+            "master_sha256",
+            "prompt_sha256",
+            "prompt_characters",
+        ):
+            self.assertNotIn(archive_key, result)
+
+    def test_static_visual_cli_has_no_archive_revision_or_check_commands(self) -> None:
+        completed = subprocess.run(
+            [sys.executable, str(ROOT / "scripts" / "visual_kit.py"), "--help"],
             check=True,
             capture_output=True,
             text=True,
             encoding="utf-8",
         )
-        finalized_result = json.loads(finalized.stdout)
-        checked = subprocess.run(
-            [
-                *command,
-                "check",
-                finalized_result["visual"],
-                "--kit",
-                str(self.kit),
-            ],
-            check=True,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-        )
-        checked_result = json.loads(checked.stdout)
-        self.assertEqual(checked_result["record"], finalized_result["record"])
-        self.assertTrue(Path(checked_result["image"]).is_file())
 
-    def test_okx_json_profile_feeds_prompt_and_archive_without_style_images(self) -> None:
+        for command in (
+            "revision-prompt",
+            "finalize",
+            "revise",
+            "migrate-visual",
+            "check",
+            "finalize-set",
+            "check-set",
+        ):
+            self.assertNotIn(command, completed.stdout)
+        for command in ("prompt", "prompt-once", "materialize-plan"):
+            self.assertIn(command, completed.stdout)
+
+    def test_documented_static_edit_uses_previous_image_without_a_revision_chain(self) -> None:
+        skill_text = (ROOT / "SKILL.md").read_text(encoding="utf-8")
+        method_text = (ROOT / "references" / "visual-production.md").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("不再增加“认可候选后归档”的第二轮确认", skill_text)
+        self.assertIn("把上一张成图直接作为编辑输入", skill_text)
+        self.assertIn("不创建 `r001`、`r002` 或父子修订记录", skill_text)
+        self.assertIn("不保存输入副本、快照、哈希、视觉记录或静态图片版本", method_text)
+
+    def test_okx_json_profile_feeds_prompt_without_archive_metadata_or_style_images(self) -> None:
         command = [sys.executable, str(ROOT / "scripts" / "visual_kit.py")]
         produced = subprocess.run(
             [*command, "style-profile", "okx-editorial"],
@@ -487,29 +477,26 @@ class ProductionWorkflowTests(unittest.TestCase):
         )
         bundle = json.loads(consumed.stdout)
 
-        self.assertEqual(len(bundle["image_references"]), 1)
+        self.assertEqual(len(bundle["image_references"]), 2)
         self.assertEqual(bundle["image_references"][0]["role"], "approved-character-master")
-        self.assertEqual(bundle["visual_language"], "okx-editorial")
-        self.assertEqual(
-            bundle["style_profile"]["sha256"],
-            manifest["profile_sha256"],
+        self.assertIn("OKX 白色标记", bundle["image_references"][1]["role"])
+        self.assertTrue(
+            bundle["image_references"][1]["path"].endswith(
+                "okx-mark-white.png"
+            )
         )
-        self.assertIn("OKX Editorial", bundle["prompt"])
+        self.assertEqual(bundle["visual_language"], "okx-editorial")
+        self.assertEqual(len(manifest["profile_sha256"]), 64)
+        self.assertNotIn("style_profile", bundle)
+        self.assertIn("OKX 品牌编辑视觉", bundle["prompt"])
+        self.assertIn("这张图最值得让人看懂什么", bundle["prompt"])
         self.assertNotIn('"scene_families"', bundle["prompt"])
         self.assertTrue(bundle["requires_user_confirmation"])
         self.assertNotIn("okx-editorial-style", bundle["prompt"])
 
-        archived = visual_kit._archive_final(self.kit, brief_path, MASTER_IMAGE)
-        checked = visual_kit._check_visual(Path(archived["visual"]), self.kit)
-        record = json.loads(Path(checked["record"]).read_text(encoding="utf-8"))
-        style_record = record["visual_language"]
-        self.assertEqual(style_record["name"], "okx-editorial")
-        self.assertEqual(len(style_record["profile_sha256"]), 64)
-        self.assertTrue(
-            (Path(checked["record"]).parent / style_record["profile_file"]).is_file()
-        )
+        self.assertFalse((self.kit / "derivatives").exists())
 
-    def test_binance_profile_matches_okx_prompt_and_archive_chain(self) -> None:
+    def test_binance_profile_matches_okx_direct_generation_contract(self) -> None:
         command = [sys.executable, str(ROOT / "scripts" / "visual_kit.py")]
         produced = subprocess.run(
             [*command, "style-profile", "binance-editorial"],
@@ -537,47 +524,42 @@ class ProductionWorkflowTests(unittest.TestCase):
         )
         bundle = json.loads(consumed.stdout)
 
-        self.assertEqual(len(bundle["image_references"]), 1)
+        self.assertEqual(len(bundle["image_references"]), 3)
         self.assertEqual(
             bundle["image_references"][0]["role"],
             "approved-character-master",
         )
-        self.assertEqual(bundle["visual_language"], "binance-editorial")
-        self.assertEqual(
-            bundle["style_profile"]["sha256"],
-            manifest["profile_sha256"],
+        self.assertTrue(
+            bundle["image_references"][1]["path"].endswith(
+                "binance-mark-yellow.png"
+            )
         )
-        self.assertIn("Binance Editorial", bundle["prompt"])
+        self.assertTrue(
+            bundle["image_references"][2]["path"].endswith(
+                "binance-mark-black.png"
+            )
+        )
+        self.assertEqual(bundle["visual_language"], "binance-editorial")
+        self.assertEqual(len(manifest["profile_sha256"]), 64)
+        self.assertNotIn("style_profile", bundle)
+        self.assertIn("币安品牌编辑视觉", bundle["prompt"])
+        self.assertIn("不要机械地把原文全部塞进图片", bundle["prompt"])
         self.assertNotIn("#F0B90B", bundle["prompt"])
         self.assertTrue(bundle["requires_user_confirmation"])
         self.assertNotIn("binance-editorial-style", bundle["prompt"])
 
-        archived = visual_kit._archive_final(self.kit, brief_path, MASTER_IMAGE)
-        checked = visual_kit._check_visual(Path(archived["visual"]), self.kit)
-        record = json.loads(Path(checked["record"]).read_text(encoding="utf-8"))
-        style_record = record["visual_language"]
-        self.assertEqual(style_record["name"], "binance-editorial")
-        self.assertEqual(len(style_record["profile_sha256"]), 64)
-        self.assertTrue(
-            (Path(checked["record"]).parent / style_record["profile_file"]).is_file()
-        )
+        self.assertFalse((self.kit / "derivatives").exists())
 
-    def test_article_plan_materializes_and_set_consumes_real_visuals(self) -> None:
+    def test_article_plan_materializes_ordered_briefs_without_set_archive(self) -> None:
         plan_path = self._write_json("article-plan.json", article_plan())
         briefs_dir = self.root / "article-briefs"
         materialized = visual_kit._materialize_article_plan(plan_path, briefs_dir)
-        self.assertEqual(materialized["shot_count"], 2)
-        for brief_name in materialized["briefs"]:
-            visual_kit._archive_final(self.kit, Path(brief_name), MASTER_IMAGE)
-
-        result = visual_kit._finalize_article_set(self.kit, plan_path)
-
-        self.assertEqual(result["status"], "PASS")
-        self.assertEqual(result["shot_count"], 2)
         self.assertEqual(
-            [Path(image).parent.parent.parent.name for image in result["images"]],
+            [Path(brief).stem.removeprefix("01-").removeprefix("02-") for brief in materialized["briefs"]],
             ["article-problem", "article-mechanism"],
         )
+        self.assertEqual(materialized["shot_count"], 2)
+        self.assertFalse((self.kit / "derivatives").exists())
 
     def test_calibration_requires_repeated_failure_and_expires_on_character_revision(self) -> None:
         with self.assertRaisesRegex(character_kit.ProfileError, "at least twice"):
@@ -606,39 +588,6 @@ class ProductionWorkflowTests(unittest.TestCase):
             character_kit._active_calibration_references(self.kit, "hands")["references"],
             [],
         )
-
-    def test_legacy_visual_requires_explicit_migration_and_is_archived(self) -> None:
-        brief_path = self._write_json("legacy-source.json", completed_brief("migration-test"))
-        produced = visual_kit._archive_final(self.kit, brief_path, MASTER_IMAGE)
-        legacy_root = self.root / "legacy-flat-visual"
-        shutil.copytree(Path(produced["visual"]) / "revisions" / "r001", legacy_root)
-        record_path = legacy_root / "visual-record.json"
-        record = json.loads(record_path.read_text(encoding="utf-8"))
-        record["record_schema_version"] = visual_kit.LEGACY_RECORD_SCHEMA_VERSION
-        record.pop("revision")
-        record.pop("visual_language")
-        legacy_inputs = []
-        for item in record["generation"]["input_references"]:
-            legacy = {
-                key: item[key]
-                for key in ("index", "role", "file", "sha256")
-            }
-            if item["index"] != 1:
-                legacy.update(
-                    {"bytes": item["bytes"], "media_type": item["media_type"]}
-                )
-            legacy_inputs.append(legacy)
-        record["generation"]["input_references"] = legacy_inputs
-        record_path.write_bytes(visual_kit._json_bytes(record))
-
-        with self.assertRaisesRegex(visual_kit.VisualError, "migrate-visual"):
-            visual_kit._check_visual(legacy_root, self.kit)
-        migrated = visual_kit._migrate_visual(legacy_root, self.kit)
-
-        self.assertEqual(migrated["revision"], "r001")
-        self.assertTrue(Path(migrated["legacy_archive"]).is_dir())
-        self.assertTrue((legacy_root / "current.json").is_file())
-
 
 if __name__ == "__main__":
     unittest.main()

@@ -1,16 +1,14 @@
 #!/usr/bin/env python3
-"""Build, archive, and verify IP Studio derivative visuals."""
+"""Build prompts and plans for IP Studio static visuals."""
 
 from __future__ import annotations
 
 import argparse
 import copy
-import datetime as dt
 import hashlib
 import json
 import os
 import re
-import shutil
 import sys
 import uuid
 from pathlib import Path
@@ -22,11 +20,7 @@ import character_kit
 SKILL_ROOT = Path(__file__).resolve().parents[1]
 ARTICLE_COVER_TEMPLATE = SKILL_ROOT / "references" / "cover-prompt.md"
 SCHEMA_VERSION = "1.0"
-RECORD_SCHEMA_VERSION = "2.0"
-LEGACY_RECORD_SCHEMA_VERSION = "1.0"
-CURRENT_SCHEMA_VERSION = "1.0"
 ARTICLE_PLAN_SCHEMA_VERSION = "1.0"
-ARTICLE_SET_SCHEMA_VERSION = "1.0"
 VISUAL_ID_RE = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$")
 HEX_COLOR_RE = re.compile(r"^#[0-9A-Fa-f]{6}$")
 RATIO_RE = re.compile(r"^[1-9]\d*:[1-9]\d*$")
@@ -113,6 +107,7 @@ STYLE_PROFILE_TOP_KEYS = {
     "visual_language",
     "display_name",
     "available_for",
+    "generation_text",
     "prompt",
 }
 STYLE_PROFILE_PROMPT_KEYS = {
@@ -169,6 +164,15 @@ VISUAL_LANGUAGES: dict[str, dict[str, Any]] = {
             "article-illustration",
         },
         "profile": "assets/visual-languages/okx-editorial/style-profile.json",
+        "default_references": (
+            {
+                "role": "默认使用的 OKX 白色标记；保持原比例和结构，不重画",
+                "path": (
+                    "assets/visual-languages/okx-editorial/logos/"
+                    "okx-mark-white.png"
+                ),
+            },
+        ),
         "source_notice": "assets/visual-languages/okx-editorial/SOURCE.md",
         "style_guide": "assets/visual-languages/okx-editorial/STYLE.md",
     },
@@ -183,6 +187,28 @@ VISUAL_LANGUAGES: dict[str, dict[str, Any]] = {
             "article-illustration",
         },
         "profile": "assets/visual-languages/binance-editorial/style-profile.json",
+        "default_references": (
+            {
+                "role": (
+                    "适用于深色背景的 Binance 黄色标记；根据最终底色与"
+                    "下一张标记二选一使用，保持原比例和结构，不重画"
+                ),
+                "path": (
+                    "assets/visual-languages/binance-editorial/logos/"
+                    "binance-mark-yellow.png"
+                ),
+            },
+            {
+                "role": (
+                    "适用于黄色或浅色背景的 Binance 黑色标记；根据最终底色与"
+                    "上一张标记二选一使用，保持原比例和结构，不重画"
+                ),
+                "path": (
+                    "assets/visual-languages/binance-editorial/logos/"
+                    "binance-mark-black.png"
+                ),
+            },
+        ),
         "source_notice": "assets/visual-languages/binance-editorial/SOURCE.md",
         "style_guide": "assets/visual-languages/binance-editorial/STYLE.md",
     },
@@ -192,11 +218,6 @@ BUILT_IN_REFERENCE_ROLES = frozenset(
     for language in VISUAL_LANGUAGES.values()
     for reference in language.get("references", ())
 )
-REVISION_SCOPES = {
-    "local-rendering",
-    "content-structure",
-    "character-revision",
-}
 ARTICLE_PLAN_TOP_KEYS = {
     "schema_version",
     "set_id",
@@ -225,7 +246,7 @@ ARTICLE_PLAN_SHOT_KEYS = {
 
 
 class VisualError(ValueError):
-    """Raised when a visual brief or archived result violates its contract."""
+    """Raised when a visual brief, style profile, or article plan is invalid."""
 
 
 def _fail(path: str, message: str) -> None:
@@ -293,10 +314,6 @@ def _text_list(
         _text(item, f"{path}[{index}]", maximum=500)
         for index, item in enumerate(value)
     ]
-
-
-def _sha256_bytes(value: bytes) -> str:
-    return hashlib.sha256(value).hexdigest()
 
 
 def _sha256_file(path: Path) -> str:
@@ -402,6 +419,11 @@ def _validate_style_profile_data(data: Any, style: str) -> dict[str, Any]:
         profile["display_name"],
         "$style_profile.display_name",
         maximum=100,
+    )
+    profile["generation_text"] = _verbatim_text(
+        profile["generation_text"],
+        "$style_profile.generation_text",
+        maximum=2000,
     )
     available_for = _text_list(
         profile["available_for"],
@@ -559,6 +581,42 @@ def _selected_visual_language(brief: dict[str, Any]) -> str:
     return brief["visual_language"]
 
 
+def _with_default_visual_language_references(
+    brief: dict[str, Any],
+) -> dict[str, Any]:
+    """Prepend exact default brand marks without loading style examples."""
+    selected = _selected_visual_language(brief)
+    if selected == "default":
+        return brief
+    defaults = VISUAL_LANGUAGES[selected].get("default_references", ())
+    if not defaults:
+        return brief
+
+    prepared = copy.deepcopy(brief)
+    supplied_by_path = {
+        Path(reference["path"]).resolve(): reference
+        for reference in prepared["references"]
+    }
+    combined: list[dict[str, str]] = []
+    seen_paths: set[Path] = set()
+    for reference in defaults:
+        path = (SKILL_ROOT / reference["path"]).resolve()
+        _detect_image(path)
+        combined.append({"role": reference["role"], "path": str(path)})
+        seen_paths.add(path)
+    for path, reference in supplied_by_path.items():
+        if path not in seen_paths:
+            combined.append(reference)
+            seen_paths.add(path)
+    if len(combined) > 12:
+        _fail(
+            "$.references",
+            "must contain at most 12 images after default brand marks are added",
+        )
+    prepared["references"] = combined
+    return prepared
+
+
 def _validate_visual_language_references(
     brief: dict[str, Any],
     kind: str,
@@ -594,24 +652,6 @@ def _validate_visual_language_references(
             f"{selected} requires its complete built-in reference pack from "
             f"style-references {selected}",
         )
-
-
-def _safe_relative(root: Path, relative: str, label: str) -> Path:
-    candidate = Path(relative)
-    if candidate.is_absolute() or ".." in candidate.parts:
-        raise VisualError(f"{label} must stay inside {root}")
-    resolved = (root / candidate).resolve()
-    try:
-        resolved.relative_to(root.resolve())
-    except ValueError as error:
-        raise VisualError(f"{label} escapes {root}") from error
-    return resolved
-
-
-def _filename_token(value: str) -> str:
-    cleaned = re.sub(r"[^\w-]+", "-", value, flags=re.UNICODE)
-    cleaned = cleaned.strip("-_")
-    return (cleaned or "reference")[:80]
 
 
 def _validate_brief(data: Any, base_dir: Path) -> dict[str, Any]:
@@ -891,6 +931,7 @@ def _render_article_cover_task(brief: dict[str, Any]) -> str:
 
 def _render_task(brief: dict[str, Any]) -> str:
     """Return the exact concise prompt that will be shown before generation."""
+    brief = _with_default_visual_language_references(brief)
     prompt_text = brief.get("prompt_text", "")
     if prompt_text.strip():
         return prompt_text
@@ -915,13 +956,22 @@ def _render_task(brief: dict[str, Any]) -> str:
 
     visual_language = _selected_visual_language(brief)
     if visual_language != "default":
-        lines.append(
-            f"用户选择的视觉风格：{VISUAL_LANGUAGES[visual_language]['display_name']}。"
-        )
+        language = VISUAL_LANGUAGES[visual_language]
+        if language["mode"] == "prompt-profile":
+            profile, _ = _load_style_profile(visual_language)
+            lines.append(f"视觉风格：{profile['generation_text']}")
+        else:
+            lines.append(f"用户选择的视觉风格：{language['display_name']}。")
 
     lines.extend(
         [
-            f"材料：{brief['content']['source_label']}",
+            (
+                "以下原文是完整内容材料，不是必须逐字放进画面的排版稿。"
+                "生成前先自行判断：这张图最值得让人看懂什么、哪些信息必须保留、"
+                "哪些可以省略，以及什么版式最适合表达。不要机械地把原文全部塞进"
+                "图片。完成判断后直接生成图片，不输出分析过程。"
+            ),
+            f"完整内容材料：{brief['content']['source_label']}",
             brief["content"]["source_text"],
         ]
     )
@@ -933,20 +983,11 @@ def build_visual_bundle(
     brief_data: Any,
     base_dir: Path,
 ) -> dict[str, Any]:
-    brief = _validate_brief(brief_data, base_dir)
+    brief = _with_default_visual_language_references(
+        _validate_brief(brief_data, base_dir)
+    )
     task = _render_task(brief)
     visual_language = _selected_visual_language(brief)
-    style_profile: dict[str, Any] | None = None
-    if (
-        visual_language != "default"
-        and VISUAL_LANGUAGES[visual_language]["mode"] == "prompt-profile"
-    ):
-        manifest = _style_profile_manifest(visual_language)
-        style_profile = {
-            "path": manifest["profile_path"],
-            "sha256": manifest["profile_sha256"],
-            "profile": manifest["profile"],
-        }
     character = character_kit.build_prompt_bundle(
         kit.resolve(),
         "scene",
@@ -958,9 +999,6 @@ def build_visual_bundle(
             "index": 1,
             "role": "approved-character-master",
             "path": str(master),
-            "sha256": _sha256_file(master),
-            "source": "character-master",
-            "brief_index": None,
         }
     ]
     for brief_index, reference in enumerate(brief["references"]):
@@ -970,26 +1008,15 @@ def build_visual_bundle(
                 "index": brief_index + 2,
                 "role": reference["role"],
                 "path": str(path),
-                "sha256": _sha256_file(path),
-                "source": "brief",
-                "brief_index": brief_index,
             }
         )
-    prompt_sha256 = _sha256_bytes(task.encode("utf-8"))
     return {
         "status": "PASS",
         "visual_id": brief["visual_id"],
         "kind": brief["kind"],
         "visual_language": visual_language,
-        "style_profile": style_profile,
         "character_id": character["character_id"],
         "character_revision": character["character_revision"],
-        "profile": character["profile"],
-        "profile_sha256": character["profile_sha256"],
-        "master_reference": character["master_reference"],
-        "master_sha256": character["master_sha256"],
-        "prompt_sha256": prompt_sha256,
-        "prompt_characters": len(task),
         "requires_user_confirmation": True,
         "image_references": image_references,
         "prompt": task,
@@ -1002,7 +1029,9 @@ def build_one_off_visual_bundle(
     brief_data: Any,
     base_dir: Path,
 ) -> dict[str, Any]:
-    brief = _validate_brief(brief_data, base_dir)
+    brief = _with_default_visual_language_references(
+        _validate_brief(brief_data, base_dir)
+    )
     reference = character_reference.resolve()
     if not reference.is_file():
         raise VisualError(f"character reference does not exist: {reference}")
@@ -1012,9 +1041,6 @@ def build_one_off_visual_bundle(
             "index": 1,
             "role": "provided-character-reference",
             "path": str(reference),
-            "sha256": _sha256_file(reference),
-            "source": "one-off-character-reference",
-            "brief_index": None,
         }
     ]
     for brief_index, item in enumerate(brief["references"]):
@@ -1024,9 +1050,6 @@ def build_one_off_visual_bundle(
                 "index": brief_index + 2,
                 "role": item["role"],
                 "path": str(path),
-                "sha256": _sha256_file(path),
-                "source": "brief",
-                "brief_index": brief_index,
             }
         )
     return {
@@ -1035,705 +1058,11 @@ def build_one_off_visual_bundle(
         "visual_id": brief["visual_id"],
         "kind": brief["kind"],
         "visual_language": _selected_visual_language(brief),
-        "prompt_sha256": _sha256_bytes(task.encode("utf-8")),
-        "prompt_characters": len(task),
         "requires_user_confirmation": True,
         "image_references": image_references,
         "prompt": task,
         "brief": brief,
     }
-
-
-def _visual_root(kit: Path, brief: dict[str, Any]) -> Path:
-    return (
-        kit.resolve()
-        / "derivatives"
-        / brief["kind"]
-        / brief["visual_id"]
-    )
-
-
-def _revision_label(value: Any, label: str) -> str:
-    rendered = str(value)
-    if not re.fullmatch(r"r\d{3,}", rendered) or int(rendered[1:]) < 1:
-        raise VisualError(f"{label} must be an rNNN label")
-    return rendered
-
-
-def _current_pointer(root: Path) -> dict[str, Any]:
-    if (root / "visual-record.json").is_file():
-        raise VisualError(
-            "legacy flat visual detected; run migrate-visual before normal use"
-        )
-    pointer = _require_object(
-        _load_json(root / "current.json"),
-        "$current",
-        {
-            "schema_version",
-            "visual_id",
-            "kind",
-            "current_revision",
-            "updated_at",
-        },
-    )
-    if pointer["schema_version"] != CURRENT_SCHEMA_VERSION:
-        raise VisualError("unsupported visual current pointer schema")
-    _revision_label(pointer["current_revision"], "current_revision")
-    return pointer
-
-
-def _revision_bundle(
-    kit: Path,
-    root: Path,
-    brief_data: Any,
-    base_dir: Path,
-    scope: str,
-    note: str,
-) -> tuple[dict[str, Any], dict[str, Any]]:
-    if scope not in REVISION_SCOPES:
-        raise VisualError("unsupported revision scope")
-    note = _text(note, "$revision.note", maximum=1000)
-    parent = _check_visual(root, kit)
-    bundle = build_visual_bundle(kit, brief_data, base_dir)
-    if bundle["visual_id"] != parent["visual_id"] or bundle["kind"] != parent["kind"]:
-        raise VisualError("revision brief must keep the existing visual_id and kind")
-    same_character_revision = (
-        bundle["character_revision"] == parent["character_revision"]
-    )
-    if scope == "character-revision" and same_character_revision:
-        raise VisualError(
-            "character-revision scope requires a newly locked character revision"
-        )
-    if scope != "character-revision" and not same_character_revision:
-        raise VisualError(
-            "only character-revision scope may change the locked character revision"
-        )
-
-    previous = Path(parent["image"]).resolve()
-    previous_reference = {
-        "index": 2,
-        "role": "previous-visual",
-        "path": str(previous),
-        "sha256": _sha256_file(previous),
-        "source": "previous-visual",
-        "brief_index": None,
-    }
-    for item in bundle["image_references"][1:]:
-        item["index"] += 1
-    bundle["image_references"].insert(1, previous_reference)
-    directions = {
-        "local-rendering": (
-            "这是局部无损编辑。把上一版成图作为编辑底图，只修改新简报和修订说明明确指出的局部；"
-            "未点名的构图、角色身份、颜色、物件和信息必须保持不变。"
-        ),
-        "content-structure": (
-            "这是内容或结构重做。以上一版只作为角色和视觉语言连续性参考，按新简报重新组织信息，"
-            "不得沿用已被修改的旧重点。"
-        ),
-        "character-revision": (
-            "这是角色版本更新后的重做。新角色主参考图是唯一身份真源；上一版只用于继承这张衍生图的用途和视觉节奏。"
-        ),
-    }
-    prompt = f"{directions[scope]}\n修订说明：{note}\n\n{bundle['prompt']}"
-    bundle["prompt"] = prompt
-    bundle["prompt_sha256"] = _sha256_bytes(prompt.encode("utf-8"))
-    bundle["prompt_characters"] = len(prompt)
-    bundle["revision_note"] = note
-    return bundle, parent
-
-
-def _write_revision(
-    kit: Path,
-    folder: Path,
-    bundle: dict[str, Any],
-    image_path: Path,
-    revision_label: str,
-    parent_revision: str | None,
-    scope: str,
-    note: str,
-) -> None:
-    brief = bundle["brief"]
-    media_type, extension = _detect_image(image_path)
-    folder.mkdir(parents=True, exist_ok=False)
-    archived_brief = copy.deepcopy(brief)
-    archived_references: list[dict[str, Any]] = []
-    inputs_dir = folder / "inputs"
-
-    master_path = Path(str(bundle["master_reference"])).resolve()
-    try:
-        master_relative = str(master_path.relative_to(kit.resolve())).replace(
-            "\\", "/"
-        )
-    except ValueError as error:
-        raise VisualError("character master must stay inside the kit") from error
-
-    for reference in bundle["image_references"]:
-        source = Path(str(reference["path"])).resolve()
-        ref_media_type, ref_extension = _detect_image(source)
-        if reference["index"] == 1:
-            archived_references.append(
-                {
-                    "index": 1,
-                    "role": "approved-character-master",
-                    "source": "character-master",
-                    "brief_index": None,
-                    "root": "kit",
-                    "file": master_relative,
-                    "sha256": _sha256_file(master_path),
-                    "bytes": master_path.stat().st_size,
-                    "media_type": ref_media_type,
-                }
-            )
-            continue
-        inputs_dir.mkdir(parents=True, exist_ok=True)
-        archived_name = (
-            f"{reference['index']:02d}-{_filename_token(reference['role'])}"
-            f"{ref_extension}"
-        )
-        archived_relative = Path("inputs") / archived_name
-        shutil.copyfile(source, folder / archived_relative)
-        brief_index = reference.get("brief_index")
-        if brief_index is not None:
-            archived_brief["references"][brief_index]["path"] = str(
-                archived_relative
-            ).replace("\\", "/")
-        archived_references.append(
-            {
-                "index": reference["index"],
-                "role": reference["role"],
-                "source": reference.get("source", "brief"),
-                "brief_index": brief_index,
-                "root": "revision",
-                "file": str(archived_relative).replace("\\", "/"),
-                "sha256": _sha256_file(folder / archived_relative),
-                "bytes": (folder / archived_relative).stat().st_size,
-                "media_type": ref_media_type,
-            }
-        )
-
-    brief_bytes = _json_bytes(archived_brief)
-    (folder / "visual-brief.json").write_bytes(brief_bytes)
-    profile_snapshot = Path(str(bundle["profile"])).read_bytes()
-    (folder / "character-profile.snapshot.json").write_bytes(profile_snapshot)
-    prompt_bytes = (str(bundle["prompt"]) + "\n").encode("utf-8")
-    (folder / "generation-prompt.txt").write_bytes(prompt_bytes)
-    visual_language_record = {
-        "name": bundle["visual_language"],
-        "profile_file": None,
-        "profile_sha256": None,
-    }
-    if bundle["style_profile"] is not None:
-        style_profile_bytes = _json_bytes(bundle["style_profile"]["profile"])
-        style_profile_file = "visual-language-profile.snapshot.json"
-        (folder / style_profile_file).write_bytes(style_profile_bytes)
-        visual_language_record = {
-            "name": bundle["visual_language"],
-            "profile_file": style_profile_file,
-            "profile_sha256": _sha256_bytes(style_profile_bytes),
-        }
-    output_name = f"final{extension}"
-    shutil.copyfile(image_path, folder / output_name)
-    record = {
-        "record_schema_version": RECORD_SCHEMA_VERSION,
-        "visual_id": brief["visual_id"],
-        "kind": brief["kind"],
-        "visual_language": visual_language_record,
-        "created_at": dt.datetime.now(dt.timezone.utc).isoformat(),
-        "revision": {
-            "label": revision_label,
-            "number": int(revision_label[1:]),
-            "parent": parent_revision,
-            "change_scope": scope,
-            "note": note,
-        },
-        "character": {
-            "character_id": bundle["character_id"],
-            "revision": bundle["character_revision"],
-            "profile_sha256": bundle["profile_sha256"],
-            "profile_snapshot": "character-profile.snapshot.json",
-            "profile_snapshot_sha256": _sha256_bytes(profile_snapshot),
-            "master_reference": master_relative,
-            "master_sha256": bundle["master_sha256"],
-        },
-        "brief": {
-            "file": "visual-brief.json",
-            "sha256": _sha256_bytes(brief_bytes),
-        },
-        "generation": {
-            "prompt_file": "generation-prompt.txt",
-            "prompt_sha256": bundle["prompt_sha256"],
-            "input_references": archived_references,
-        },
-        "output": {
-            "file": output_name,
-            "sha256": _sha256_file(folder / output_name),
-            "bytes": (folder / output_name).stat().st_size,
-            "media_type": media_type,
-        },
-    }
-    (folder / "visual-record.json").write_bytes(_json_bytes(record))
-
-
-def _archive_final(
-    kit: Path,
-    brief_path: Path,
-    image_path: Path,
-) -> dict[str, Any]:
-    bundle = build_visual_bundle(
-        kit,
-        _load_json(brief_path),
-        brief_path.parent,
-    )
-    root = _visual_root(kit, bundle["brief"])
-    if root.exists():
-        raise VisualError(f"refusing to overwrite existing visual: {root}")
-    root.parent.mkdir(parents=True, exist_ok=True)
-    stage = root.parent / f".{root.name}.{uuid.uuid4().hex}.staging"
-    revision_dir = stage / "revisions" / "r001"
-    revision_dir.parent.mkdir(parents=True, exist_ok=False)
-    _write_revision(
-        kit.resolve(),
-        revision_dir,
-        bundle,
-        image_path,
-        "r001",
-        None,
-        "initial",
-        "initial requested visual",
-    )
-    pointer = {
-        "schema_version": CURRENT_SCHEMA_VERSION,
-        "visual_id": bundle["visual_id"],
-        "kind": bundle["kind"],
-        "current_revision": "r001",
-        "updated_at": dt.datetime.now(dt.timezone.utc).isoformat(),
-    }
-    (stage / "current.json").write_bytes(_json_bytes(pointer))
-    os.replace(stage, root)
-    return _check_visual(root, kit.resolve())
-
-
-def _revise_visual(
-    kit: Path,
-    root: Path,
-    brief_path: Path,
-    image_path: Path,
-    scope: str,
-    note: str,
-) -> dict[str, Any]:
-    bundle, parent = _revision_bundle(
-        kit.resolve(),
-        root.resolve(),
-        _load_json(brief_path),
-        brief_path.parent,
-        scope,
-        note,
-    )
-    next_number = int(parent["revision"][1:]) + 1
-    label = f"r{next_number:03d}"
-    destination = root.resolve() / "revisions" / label
-    if destination.exists():
-        raise VisualError(f"visual revision already exists: {destination}")
-    stage = destination.parent / f".{label}.{uuid.uuid4().hex}.staging"
-    _write_revision(
-        kit.resolve(),
-        stage,
-        bundle,
-        image_path,
-        label,
-        parent["revision"],
-        scope,
-        bundle["revision_note"],
-    )
-    os.replace(stage, destination)
-    pointer = {
-        "schema_version": CURRENT_SCHEMA_VERSION,
-        "visual_id": bundle["visual_id"],
-        "kind": bundle["kind"],
-        "current_revision": label,
-        "updated_at": dt.datetime.now(dt.timezone.utc).isoformat(),
-    }
-    temporary = root.resolve() / f".current.{uuid.uuid4().hex}.tmp"
-    temporary.write_bytes(_json_bytes(pointer))
-    os.replace(temporary, root.resolve() / "current.json")
-    return _check_visual(root, kit.resolve())
-
-
-def _check_visual(
-    root: Path,
-    kit: Path,
-    revision_label: str | None = None,
-) -> dict[str, Any]:
-    root = root.resolve()
-    kit = kit.resolve()
-    if not root.is_dir():
-        raise VisualError(f"visual folder does not exist: {root}")
-    pointer = _current_pointer(root)
-    label = _revision_label(
-        revision_label or pointer["current_revision"],
-        "visual revision",
-    )
-    folder = root / "revisions" / label
-    if not folder.is_dir():
-        raise VisualError(f"visual revision does not exist: {folder}")
-
-    record_data = _load_json(folder / "visual-record.json")
-    if isinstance(record_data, dict) and "visual_language" not in record_data:
-        record_data = {
-            **record_data,
-            "visual_language": {
-                "name": "default",
-                "profile_file": None,
-                "profile_sha256": None,
-            },
-        }
-    record = _require_object(
-        record_data,
-        "$record",
-        {
-            "record_schema_version",
-            "visual_id",
-            "kind",
-            "visual_language",
-            "created_at",
-            "revision",
-            "character",
-            "brief",
-            "generation",
-            "output",
-        },
-    )
-    if record["record_schema_version"] != RECORD_SCHEMA_VERSION:
-        raise VisualError("unsupported visual record schema")
-    revision = _require_object(
-        record["revision"],
-        "$record.revision",
-        {"label", "number", "parent", "change_scope", "note"},
-    )
-    if revision["label"] != label or revision["number"] != int(label[1:]):
-        raise VisualError("visual revision metadata mismatch")
-    if label == "r001":
-        if revision["parent"] is not None or revision["change_scope"] != "initial":
-            raise VisualError("r001 must be an initial revision without a parent")
-    else:
-        expected_parent = f"r{int(label[1:]) - 1:03d}"
-        if revision["parent"] != expected_parent:
-            raise VisualError("visual revision parent must be the preceding revision")
-        if revision["change_scope"] not in REVISION_SCOPES:
-            raise VisualError("unsupported visual revision scope")
-
-    character_record = _require_object(
-        record["character"],
-        "$record.character",
-        {
-            "character_id",
-            "revision",
-            "profile_sha256",
-            "profile_snapshot",
-            "profile_snapshot_sha256",
-            "master_reference",
-            "master_sha256",
-        },
-    )
-    brief_record = _require_object(record["brief"], "$record.brief", {"file", "sha256"})
-    visual_language_record = _require_object(
-        record["visual_language"],
-        "$record.visual_language",
-        {"name", "profile_file", "profile_sha256"},
-    )
-    generation_record = _require_object(
-        record["generation"],
-        "$record.generation",
-        {"prompt_file", "prompt_sha256", "input_references"},
-    )
-    output_record = _require_object(
-        record["output"],
-        "$record.output",
-        {"file", "sha256", "bytes", "media_type"},
-    )
-    current_character = character_kit.build_prompt_bundle(
-        kit, "scene", "验证角色包仍可读取；不生成图片。"
-    )
-    if current_character["character_id"] != character_record["character_id"]:
-        raise VisualError("record character_id does not match the current kit")
-
-    brief_path = _safe_relative(folder, brief_record["file"], "brief file")
-    brief_bytes = brief_path.read_bytes()
-    if _sha256_bytes(brief_bytes) != brief_record["sha256"]:
-        raise VisualError("visual brief SHA-256 mismatch")
-    brief = _validate_brief(_load_json(brief_path), folder)
-    if brief["visual_id"] != record["visual_id"] or brief["kind"] != record["kind"]:
-        raise VisualError("record and brief identity mismatch")
-    if pointer["visual_id"] != record["visual_id"] or pointer["kind"] != record["kind"]:
-        raise VisualError("current pointer and record identity mismatch")
-    if visual_language_record["name"] != brief["visual_language"]:
-        raise VisualError("record and brief visual language mismatch")
-    selected_language = brief["visual_language"]
-    uses_prompt_profile = (
-        selected_language != "default"
-        and VISUAL_LANGUAGES[selected_language]["mode"] == "prompt-profile"
-    )
-    if uses_prompt_profile:
-        profile_file = _text(
-            visual_language_record["profile_file"],
-            "$record.visual_language.profile_file",
-            maximum=200,
-        )
-        profile_sha256 = _text(
-            visual_language_record["profile_sha256"],
-            "$record.visual_language.profile_sha256",
-            maximum=64,
-        )
-        if not re.fullmatch(r"[0-9a-f]{64}", profile_sha256):
-            raise VisualError("visual language profile SHA-256 is invalid")
-        style_profile_path = _safe_relative(
-            folder,
-            profile_file,
-            "visual language profile snapshot",
-        )
-        style_profile_bytes = style_profile_path.read_bytes()
-        if _sha256_bytes(style_profile_bytes) != profile_sha256:
-            raise VisualError("visual language profile SHA-256 mismatch")
-        _validate_style_profile_data(
-            _load_json(style_profile_path),
-            selected_language,
-        )
-    elif (
-        visual_language_record["profile_file"] is not None
-        or visual_language_record["profile_sha256"] is not None
-    ):
-        raise VisualError("visual language profile is only valid for prompt-profile modes")
-
-    snapshot_path = _safe_relative(folder, character_record["profile_snapshot"], "profile snapshot")
-    snapshot_bytes = snapshot_path.read_bytes()
-    if _sha256_bytes(snapshot_bytes) != character_record["profile_snapshot_sha256"]:
-        raise VisualError("character profile snapshot SHA-256 mismatch")
-    snapshot = character_kit.validate_locked_profile(_load_json(snapshot_path))
-    if snapshot["character_id"] != character_record["character_id"]:
-        raise VisualError("profile snapshot character_id mismatch")
-    if f"r{snapshot['revision']:03d}" != character_record["revision"]:
-        raise VisualError("profile snapshot revision mismatch")
-    canonical_profile = json.dumps(
-        {key: snapshot[key] for key in character_kit.AUTHOR_KEY_ORDER},
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-    ).encode("utf-8")
-    if _sha256_bytes(canonical_profile) != character_record["profile_sha256"]:
-        raise VisualError("profile snapshot canonical SHA-256 mismatch")
-
-    master_path = _safe_relative(kit, character_record["master_reference"], "master reference")
-    master_media_type, _ = _detect_image(master_path)
-    if snapshot["assets"]["master_reference"] != character_record["master_reference"]:
-        raise VisualError("profile snapshot master reference mismatch")
-    if snapshot["assets"]["sha256"] != character_record["master_sha256"]:
-        raise VisualError("profile snapshot master SHA-256 mismatch")
-    if snapshot["assets"]["bytes"] != master_path.stat().st_size:
-        raise VisualError("profile snapshot master byte size mismatch")
-    if snapshot["assets"]["media_type"] != master_media_type:
-        raise VisualError("profile snapshot master media type mismatch")
-    if _sha256_file(master_path) != character_record["master_sha256"]:
-        raise VisualError("archived character master SHA-256 mismatch")
-
-    prompt_path = _safe_relative(folder, generation_record["prompt_file"], "generation prompt")
-    if _sha256_bytes(prompt_path.read_bytes().rstrip(b"\r\n")) != generation_record["prompt_sha256"]:
-        raise VisualError("generation prompt SHA-256 mismatch")
-
-    input_references = generation_record["input_references"]
-    expected_count = 1 + len(brief["references"]) + (0 if label == "r001" else 1)
-    if not isinstance(input_references, list) or len(input_references) != expected_count:
-        raise VisualError(f"record must contain {expected_count} input references")
-    seen_brief_indices: set[int] = set()
-    previous_count = 0
-    for position, raw_item in enumerate(input_references):
-        item = _require_object(
-            raw_item,
-            f"$record.generation.input_references[{position}]",
-            {
-                "index",
-                "role",
-                "source",
-                "brief_index",
-                "root",
-                "file",
-                "sha256",
-                "bytes",
-                "media_type",
-            },
-        )
-        if item["index"] != position + 1:
-            raise VisualError("input reference index mismatch")
-        candidate = _safe_relative(
-            kit if item["root"] == "kit" else folder,
-            item["file"],
-            "input reference",
-        )
-        media_type, _ = _detect_image(candidate)
-        if candidate.stat().st_size != item["bytes"] or media_type != item["media_type"]:
-            raise VisualError("input reference metadata mismatch")
-        if _sha256_file(candidate) != item["sha256"]:
-            raise VisualError("input reference SHA-256 mismatch")
-        if position == 0:
-            if (
-                item["source"] != "character-master"
-                or item["role"] != "approved-character-master"
-                or item["brief_index"] is not None
-                or candidate != master_path
-            ):
-                raise VisualError("first input must be the locked character master")
-        elif item["source"] == "previous-visual":
-            previous_count += 1
-            if item["brief_index"] is not None or item["role"] != "previous-visual":
-                raise VisualError("invalid previous visual input")
-            parent_folder = root / "revisions" / str(revision["parent"])
-            parent_record = _load_json(parent_folder / "visual-record.json")
-            parent_output = _safe_relative(
-                parent_folder, parent_record["output"]["file"], "parent output"
-            )
-            if _sha256_file(parent_output) != item["sha256"]:
-                raise VisualError("previous visual input does not match parent output")
-        elif item["source"] == "brief":
-            brief_index = item["brief_index"]
-            if not isinstance(brief_index, int) or not 0 <= brief_index < len(brief["references"]):
-                raise VisualError("invalid brief reference index")
-            if brief_index in seen_brief_indices:
-                raise VisualError("duplicate brief reference index")
-            seen_brief_indices.add(brief_index)
-            brief_reference = brief["references"][brief_index]
-            if item["role"] != brief_reference["role"] or candidate != Path(brief_reference["path"]).resolve():
-                raise VisualError("brief reference does not match archived input")
-        else:
-            raise VisualError("unsupported input reference source")
-    if previous_count != (0 if label == "r001" else 1):
-        raise VisualError("revision must contain exactly one previous visual input")
-    if seen_brief_indices != set(range(len(brief["references"]))):
-        raise VisualError("not every brief reference was archived")
-
-    output = _safe_relative(folder, output_record["file"], "output image")
-    media_type, _ = _detect_image(output)
-    if media_type != output_record["media_type"] or output.stat().st_size != output_record["bytes"]:
-        raise VisualError("output image metadata mismatch")
-    if _sha256_file(output) != output_record["sha256"]:
-        raise VisualError("output SHA-256 mismatch")
-    return {
-        "status": "PASS",
-        "visual": str(root),
-        "visual_id": record["visual_id"],
-        "kind": record["kind"],
-        "revision": label,
-        "current_revision": pointer["current_revision"],
-        "character_id": character_record["character_id"],
-        "character_revision": character_record["revision"],
-        "image": str(output),
-        "record": str(folder / "visual-record.json"),
-    }
-
-
-def _check_legacy_visual(folder: Path, kit: Path) -> dict[str, Any]:
-    folder = folder.resolve()
-    record = _require_object(
-        _load_json(folder / "visual-record.json"),
-        "$legacy_record",
-        {
-            "record_schema_version",
-            "visual_id",
-            "kind",
-            "created_at",
-            "character",
-            "brief",
-            "generation",
-            "output",
-        },
-    )
-    if record["record_schema_version"] != LEGACY_RECORD_SCHEMA_VERSION:
-        raise VisualError("folder is not a legacy flat visual")
-    brief_path = _safe_relative(folder, record["brief"]["file"], "legacy brief")
-    if _sha256_file(brief_path) != record["brief"]["sha256"]:
-        raise VisualError("legacy brief SHA-256 mismatch")
-    _validate_brief(_load_json(brief_path), folder)
-    output = _safe_relative(folder, record["output"]["file"], "legacy output")
-    _detect_image(output)
-    if _sha256_file(output) != record["output"]["sha256"]:
-        raise VisualError("legacy output SHA-256 mismatch")
-    character_kit._check_kit(kit.resolve())
-    return {"record": record, "brief": brief_path, "output": output}
-
-
-def _migrate_visual(root: Path, kit: Path) -> dict[str, Any]:
-    root = root.resolve()
-    kit = kit.resolve()
-    legacy = _check_legacy_visual(root, kit)
-    record = copy.deepcopy(legacy["record"])
-    stage = root.parent / f".{root.name}.{uuid.uuid4().hex}.migration"
-    revision_dir = stage / "revisions" / "r001"
-    shutil.copytree(root, revision_dir)
-    record["record_schema_version"] = RECORD_SCHEMA_VERSION
-    record["visual_language"] = {
-        "name": "default",
-        "profile_file": None,
-        "profile_sha256": None,
-    }
-    record["revision"] = {
-        "label": "r001",
-        "number": 1,
-        "parent": None,
-        "change_scope": "initial",
-        "note": "migrated from the former flat visual archive",
-    }
-    converted: list[dict[str, Any]] = []
-    for position, item in enumerate(record["generation"]["input_references"]):
-        if position == 0:
-            candidate = _safe_relative(kit, item["file"], "legacy character master")
-            media_type, _ = _detect_image(candidate)
-            converted.append(
-                {
-                    "index": 1,
-                    "role": item["role"],
-                    "source": "character-master",
-                    "brief_index": None,
-                    "root": "kit",
-                    "file": item["file"],
-                    "sha256": item["sha256"],
-                    "bytes": candidate.stat().st_size,
-                    "media_type": media_type,
-                }
-            )
-        else:
-            converted.append(
-                {
-                    **item,
-                    "source": "brief",
-                    "brief_index": position - 1,
-                    "root": "revision",
-                }
-            )
-    record["generation"]["input_references"] = converted
-    (revision_dir / "visual-record.json").write_bytes(_json_bytes(record))
-    pointer = {
-        "schema_version": CURRENT_SCHEMA_VERSION,
-        "visual_id": record["visual_id"],
-        "kind": record["kind"],
-        "current_revision": "r001",
-        "updated_at": dt.datetime.now(dt.timezone.utc).isoformat(),
-    }
-    (stage / "current.json").write_bytes(_json_bytes(pointer))
-    _check_visual(stage, kit)
-    archive_root = root.parent / ".ip-studio-legacy-archives"
-    archive_root.mkdir(parents=True, exist_ok=True)
-    timestamp = dt.datetime.now(dt.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    archive = archive_root / f"{root.name}-{timestamp}"
-    if archive.exists():
-        raise VisualError(f"legacy archive target already exists: {archive}")
-    os.replace(root, archive)
-    try:
-        os.replace(stage, root)
-    except OSError as error:
-        raise VisualError(
-            f"migration activation failed; original visual remains at {archive}"
-        ) from error
-    checked = _check_visual(root, kit)
-    checked["legacy_archive"] = str(archive)
-    return checked
 
 
 def _article_plan_template(set_id: str, language: str) -> dict[str, Any]:
@@ -1897,197 +1226,6 @@ def _materialize_article_plan(plan_path: Path, output: Path) -> dict[str, Any]:
     }
 
 
-def _set_pointer(root: Path) -> dict[str, Any]:
-    pointer = _require_object(
-        _load_json(root / "current.json"),
-        "$set_current",
-        {"schema_version", "set_id", "current_revision", "updated_at"},
-    )
-    if pointer["schema_version"] != ARTICLE_SET_SCHEMA_VERSION:
-        raise VisualError("unsupported article set pointer schema")
-    _revision_label(pointer["current_revision"], "article set current_revision")
-    return pointer
-
-
-def _assert_visual_matches_shot(
-    visual: dict[str, Any],
-    plan: dict[str, Any],
-    shot: dict[str, Any],
-) -> None:
-    record_path = Path(visual["record"])
-    record = _load_json(record_path)
-    actual = _validate_brief(
-        _load_json(record_path.parent / record["brief"]["file"]),
-        record_path.parent,
-    )
-    expected = _validate_brief(_shot_brief(plan, shot), SKILL_ROOT)
-    semantic_fields = (
-        "visual_id",
-        "kind",
-        "language",
-        "visual_language",
-        "content",
-        "message",
-        "brand",
-        "composition",
-        "character_action",
-        "decisions",
-    )
-    for field in semantic_fields:
-        if actual[field] != expected[field]:
-            raise VisualError(
-                f"visual {shot['visual_id']} no longer matches article plan field {field}"
-            )
-    if [item["role"] for item in actual["references"]] != [
-        item["role"] for item in expected["references"]
-    ]:
-        raise VisualError(
-            f"visual {shot['visual_id']} reference roles do not match the article plan"
-        )
-
-
-def _finalize_article_set(kit: Path, plan_path: Path) -> dict[str, Any]:
-    kit = kit.resolve()
-    plan = _validate_article_plan(_load_json(plan_path))
-    visuals: list[dict[str, Any]] = []
-    for shot in plan["shots"]:
-        root = kit / "derivatives" / "article-illustration" / shot["visual_id"]
-        visual = _check_visual(root, kit)
-        _assert_visual_matches_shot(visual, plan, shot)
-        visuals.append(visual)
-    root = kit / "derivatives" / "article-illustration-set" / plan["set_id"]
-    is_new = not root.exists()
-    if not is_new:
-        current = _set_pointer(root)
-        number = int(str(current["current_revision"])[1:]) + 1
-    else:
-        number = 1
-        root.parent.mkdir(parents=True, exist_ok=True)
-    label = f"r{number:03d}"
-    if is_new:
-        stage_root = root.parent / f".{root.name}.{uuid.uuid4().hex}.staging"
-        stage = stage_root / "revisions" / label
-        stage.mkdir(parents=True, exist_ok=False)
-        destination = stage
-    else:
-        destination = root / "revisions" / label
-        if destination.exists():
-            raise VisualError(f"article set revision already exists: {destination}")
-        stage_root = root
-        stage = destination.parent / f".{label}.{uuid.uuid4().hex}.staging"
-        stage.mkdir(parents=False, exist_ok=False)
-    plan_bytes = _json_bytes(plan)
-    (stage / "article-plan.json").write_bytes(plan_bytes)
-    shots: list[dict[str, Any]] = []
-    for index, (shot, visual) in enumerate(zip(plan["shots"], visuals), start=1):
-        visual_root = Path(visual["visual"])
-        shots.append(
-            {
-                "index": index,
-                "visual_id": shot["visual_id"],
-                "placement_after": shot["placement_after"],
-                "source_excerpt_sha256": _sha256_bytes(shot["source_excerpt"].encode("utf-8")),
-                "visual_root": str(visual_root.relative_to(kit)).replace("\\", "/"),
-                "visual_revision": visual["revision"],
-                "image_sha256": _sha256_file(Path(visual["image"])),
-            }
-        )
-    record = {
-        "schema_version": ARTICLE_SET_SCHEMA_VERSION,
-        "set_id": plan["set_id"],
-        "created_at": dt.datetime.now(dt.timezone.utc).isoformat(),
-        "revision": label,
-        "plan": {"file": "article-plan.json", "sha256": _sha256_bytes(plan_bytes)},
-        "shots": shots,
-    }
-    (stage / "article-set-record.json").write_bytes(_json_bytes(record))
-    pointer = {
-        "schema_version": ARTICLE_SET_SCHEMA_VERSION,
-        "set_id": plan["set_id"],
-        "current_revision": label,
-        "updated_at": dt.datetime.now(dt.timezone.utc).isoformat(),
-    }
-    if is_new:
-        (stage_root / "current.json").write_bytes(_json_bytes(pointer))
-        _check_article_set(stage_root, kit)
-        os.replace(stage_root, root)
-    else:
-        os.replace(stage, destination)
-        temporary = root / f".current.{uuid.uuid4().hex}.tmp"
-        temporary.write_bytes(_json_bytes(pointer))
-        os.replace(temporary, root / "current.json")
-    return _check_article_set(root, kit)
-
-
-def _check_article_set(
-    root: Path,
-    kit: Path,
-    revision_label: str | None = None,
-) -> dict[str, Any]:
-    root = root.resolve()
-    kit = kit.resolve()
-    pointer = _set_pointer(root)
-    label = _revision_label(
-        revision_label or pointer["current_revision"],
-        "article set revision",
-    )
-    folder = root / "revisions" / label
-    record = _require_object(
-        _load_json(folder / "article-set-record.json"),
-        "$set_record",
-        {"schema_version", "set_id", "created_at", "revision", "plan", "shots"},
-    )
-    if record["schema_version"] != ARTICLE_SET_SCHEMA_VERSION or record["revision"] != label:
-        raise VisualError("article set record schema or revision mismatch")
-    if record["set_id"] != pointer["set_id"]:
-        raise VisualError("article set pointer identity mismatch")
-    plan_record = _require_object(record["plan"], "$set_record.plan", {"file", "sha256"})
-    plan_path = _safe_relative(folder, plan_record["file"], "article plan")
-    if _sha256_file(plan_path) != plan_record["sha256"]:
-        raise VisualError("article plan SHA-256 mismatch")
-    plan = _validate_article_plan(_load_json(plan_path))
-    shots = record["shots"]
-    if not isinstance(shots, list) or len(shots) != len(plan["shots"]):
-        raise VisualError("article set shot count mismatch")
-    images: list[str] = []
-    for index, (item, planned) in enumerate(zip(shots, plan["shots"]), start=1):
-        item = _require_object(
-            item,
-            f"$set_record.shots[{index - 1}]",
-            {
-                "index",
-                "visual_id",
-                "placement_after",
-                "source_excerpt_sha256",
-                "visual_root",
-                "visual_revision",
-                "image_sha256",
-            },
-        )
-        if item["index"] != index or item["visual_id"] != planned["visual_id"]:
-            raise VisualError("article set shot order or visual_id mismatch")
-        if item["placement_after"] != planned["placement_after"]:
-            raise VisualError("article set placement mismatch")
-        if item["source_excerpt_sha256"] != _sha256_bytes(planned["source_excerpt"].encode("utf-8")):
-            raise VisualError("article set excerpt mismatch")
-        visual_root = _safe_relative(kit, item["visual_root"], "article visual root")
-        visual = _check_visual(visual_root, kit, item["visual_revision"])
-        _assert_visual_matches_shot(visual, plan, planned)
-        if _sha256_file(Path(visual["image"])) != item["image_sha256"]:
-            raise VisualError("article set image SHA-256 mismatch")
-        images.append(visual["image"])
-    return {
-        "status": "PASS",
-        "set": str(root),
-        "set_id": record["set_id"],
-        "revision": label,
-        "current_revision": pointer["current_revision"],
-        "shot_count": len(images),
-        "images": images,
-        "plan": str(plan_path),
-    }
-
-
 def _schema() -> dict[str, Any]:
     return {
         "schema_version": SCHEMA_VERSION,
@@ -2127,13 +1265,6 @@ def _schema() -> dict[str, Any]:
                 "profile": language.get("profile"),
             }
             for name, language in VISUAL_LANGUAGES.items()
-        },
-        "archive_contract": {
-            "record_schema_version": RECORD_SCHEMA_VERSION,
-            "current_pointer_schema_version": CURRENT_SCHEMA_VERSION,
-            "layout": "<visual>/current.json + revisions/rNNN/",
-            "revision_scopes": sorted(REVISION_SCOPES),
-            "legacy_migration_command": "migrate-visual",
         },
     }
 
@@ -2213,61 +1344,6 @@ def _command_prompt_once(args: argparse.Namespace) -> int:
     return 0
 
 
-def _command_revision_prompt(args: argparse.Namespace) -> int:
-    brief_path = Path(args.brief)
-    bundle, parent = _revision_bundle(
-        Path(args.kit),
-        Path(args.visual),
-        _load_json(brief_path),
-        brief_path.parent,
-        args.change_scope,
-        args.note,
-    )
-    printable = {key: value for key, value in bundle.items() if key != "brief"}
-    printable["parent_revision"] = parent["revision"]
-    print(json.dumps(printable, ensure_ascii=False, indent=2))
-    return 0
-
-
-def _command_finalize(args: argparse.Namespace) -> int:
-    result = _archive_final(
-        Path(args.kit),
-        Path(args.brief),
-        Path(args.image),
-    )
-    print(json.dumps(result, ensure_ascii=False, indent=2))
-    return 0
-
-
-def _command_revise(args: argparse.Namespace) -> int:
-    result = _revise_visual(
-        Path(args.kit),
-        Path(args.visual),
-        Path(args.brief),
-        Path(args.image),
-        args.change_scope,
-        args.note,
-    )
-    print(json.dumps(result, ensure_ascii=False, indent=2))
-    return 0
-
-
-def _command_migrate_visual(args: argparse.Namespace) -> int:
-    result = _migrate_visual(Path(args.visual), Path(args.kit))
-    print(json.dumps(result, ensure_ascii=False, indent=2))
-    return 0
-
-
-def _command_check(args: argparse.Namespace) -> int:
-    result = _check_visual(
-        Path(args.visual),
-        Path(args.kit),
-        args.revision or None,
-    )
-    print(json.dumps(result, ensure_ascii=False, indent=2))
-    return 0
-
-
 def _command_plan_schema(_: argparse.Namespace) -> int:
     result = {
         "schema_version": ARTICLE_PLAN_SCHEMA_VERSION,
@@ -2297,22 +1373,6 @@ def _command_plan_draft(args: argparse.Namespace) -> int:
 
 def _command_materialize_plan(args: argparse.Namespace) -> int:
     result = _materialize_article_plan(Path(args.plan), Path(args.output))
-    print(json.dumps(result, ensure_ascii=False, indent=2))
-    return 0
-
-
-def _command_finalize_set(args: argparse.Namespace) -> int:
-    result = _finalize_article_set(Path(args.kit), Path(args.plan))
-    print(json.dumps(result, ensure_ascii=False, indent=2))
-    return 0
-
-
-def _command_check_set(args: argparse.Namespace) -> int:
-    result = _check_article_set(
-        Path(args.set),
-        Path(args.kit),
-        args.revision or None,
-    )
     print(json.dumps(result, ensure_ascii=False, indent=2))
     return 0
 
@@ -2381,56 +1441,6 @@ def _build_parser() -> argparse.ArgumentParser:
     prompt_once_parser.add_argument("--brief", required=True)
     prompt_once_parser.set_defaults(handler=_command_prompt_once)
 
-    revision_prompt_parser = subparsers.add_parser(
-        "revision-prompt",
-        help="Build a scope-aware edit prompt with the previous visual as input.",
-    )
-    revision_prompt_parser.add_argument("kit")
-    revision_prompt_parser.add_argument("--visual", required=True)
-    revision_prompt_parser.add_argument("--brief", required=True)
-    revision_prompt_parser.add_argument(
-        "--change-scope", required=True, choices=sorted(REVISION_SCOPES)
-    )
-    revision_prompt_parser.add_argument("--note", required=True)
-    revision_prompt_parser.set_defaults(handler=_command_revision_prompt)
-
-    finalize_parser = subparsers.add_parser(
-        "finalize", help="Archive the generated visual without changing identity."
-    )
-    finalize_parser.add_argument("kit")
-    finalize_parser.add_argument("--brief", required=True)
-    finalize_parser.add_argument("--image", required=True)
-    finalize_parser.set_defaults(handler=_command_finalize)
-
-    revise_parser = subparsers.add_parser(
-        "revise", help="Archive a new non-destructive visual revision."
-    )
-    revise_parser.add_argument("kit")
-    revise_parser.add_argument("--visual", required=True)
-    revise_parser.add_argument("--brief", required=True)
-    revise_parser.add_argument("--image", required=True)
-    revise_parser.add_argument(
-        "--change-scope", required=True, choices=sorted(REVISION_SCOPES)
-    )
-    revise_parser.add_argument("--note", required=True)
-    revise_parser.set_defaults(handler=_command_revise)
-
-    migrate_parser = subparsers.add_parser(
-        "migrate-visual",
-        help="Convert one legacy flat visual into the only supported versioned layout.",
-    )
-    migrate_parser.add_argument("visual")
-    migrate_parser.add_argument("--kit", required=True)
-    migrate_parser.set_defaults(handler=_command_migrate_visual)
-
-    check_parser = subparsers.add_parser(
-        "check", help="Verify one archived derivative visual."
-    )
-    check_parser.add_argument("visual")
-    check_parser.add_argument("--kit", required=True)
-    check_parser.add_argument("--revision", default="")
-    check_parser.set_defaults(handler=_command_check)
-
     plan_schema_parser = subparsers.add_parser(
         "plan-schema", help="Print the whole-article illustration-plan contract."
     )
@@ -2451,22 +1461,6 @@ def _build_parser() -> argparse.ArgumentParser:
     materialize_parser.add_argument("plan")
     materialize_parser.add_argument("--output", required=True)
     materialize_parser.set_defaults(handler=_command_materialize_plan)
-
-    finalize_set_parser = subparsers.add_parser(
-        "finalize-set",
-        help="Archive an ordered article set from checked visual revisions.",
-    )
-    finalize_set_parser.add_argument("kit")
-    finalize_set_parser.add_argument("--plan", required=True)
-    finalize_set_parser.set_defaults(handler=_command_finalize_set)
-
-    check_set_parser = subparsers.add_parser(
-        "check-set", help="Verify an article set and every consumed visual revision."
-    )
-    check_set_parser.add_argument("set")
-    check_set_parser.add_argument("--kit", required=True)
-    check_set_parser.add_argument("--revision", default="")
-    check_set_parser.set_defaults(handler=_command_check_set)
     return parser
 
 

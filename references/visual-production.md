@@ -1,6 +1,6 @@
 # IP 衍生视觉生产方法
 
-在 `SKILL.md` 已确认用户要用现有 IP 角色制作头像、主页横幅、资料卡、文章封面、说明图或正文插图后读取本文件。它负责视觉简报、生图、检查和归档；一次性结果可以直接使用用户提供的角色图，可长期复用的结果仍由 `character-profile.json` 与其中登记的单张主参考图决定身份。
+在 `SKILL.md` 已确认用户要用现有 IP 角色制作头像、主页横幅、资料卡、文章封面、说明图或正文插图后读取本文件。它负责视觉简报、提示词、生图和直接交付；角色可以来自用户提供的已认可图片，也可以来自 `character-profile.json` 登记的当前主参考图，但静态生成结果不写回角色库。
 
 ## 1. 先建立干净的视觉简报
 
@@ -10,13 +10,13 @@
 python scripts/visual_kit.py draft <brief-path> --kind <kind> --visual-id <slug> --language <language>
 ```
 
-Agent 从当前请求和用户资料建立草稿，用户不需要编辑 JSON。`prompt_text` 是实际准备交给图像模型的唯一提示词：用户已经提供完整提示词时原样保存；没有完整提示词时，只写目标、本次成品需要的内容材料、实际参考图职责、必要输出比例、逐字文字或 logo 等用户硬要求。开放的视觉中心、构图、场景、动作、物件、排版、配色、光影、材质和装饰由下游图像 AI 决定，不因为 Agent 能够分析内容就提前填满。
+Agent 从当前请求和用户资料建立草稿，用户不需要编辑 JSON。用户已经提供完整提示词时，把它原样保存在 `prompt_text`。没有完整提示词并选择 OKX 或 Binance 品牌编辑视觉时，`prompt_text` 保持为空：脚本会把目标、实际参考图职责、必要输出比例、提炼后的简短品牌风格文字与完整内容原文组成唯一提示词。Agent 不提前选标题、重点数字、保留段落或版式，也不把原文改成机械的排版清单；提示词要求图像 AI 在生成前自行判断这张图最值得让人看懂什么、哪些信息必须保留、哪些可以省略，以及什么版式最适合表达。开放的视觉中心、场景、动作、物件、文字层级、配色、光影、材质和装饰同样由图像 AI 决定。
 
 内容材料以用户明确提供或点名的正文为准。用户只指向项目、仓库、网页、README 或资料集合时，这些位置只是取材来源；Agent 只选取与本次用户目标直接相关的原文，保留原有顺序和必要上下文，不摘要、转述或重排，也不把同一来源中服务导航、安装、开发、维护或其它结果的内容一起交给图像模型。
 
 未选择其它视觉语言的默认文章封面没有完整提示词时不由 Agent 另写提示词，保持 `prompt_text` 为空，把本次封面需要的内容原文写入 `content.source_text`。`scripts/visual_kit.py` 会读取由主入口路由的唯一活动封面模板，只代入用户比例、实际图片职责和这些内容材料；标题、核心对象、关键变化、品牌层级、角色动作与视觉叙事都由收到这份输入的图像模型在同一次生成中决定。
 
-现有 `message`、`composition`、`character_action` 和 `decisions` 字段只为读取旧归档保留。新视觉可以保持为空或默认值；脚本不会把它们编译进生图提示词。图片资料仍分别登记身份、logo、界面、物品或风格参考的真实职责，参考图不得向当前内容补充事实。
+现有 `message`、`composition`、`character_action` 和 `decisions` 字段属于兼容字段。新视觉可以保持为空或默认值；脚本不会把它们编译进生图提示词。图片资料仍分别登记身份、logo、界面、物品或风格参考的真实职责，参考图不得向当前内容补充事实。
 
 ## 2. 角色与资料怎样进入生图
 
@@ -32,16 +32,16 @@ python scripts/visual_kit.py prompt <character-kit> --brief <brief-path>
 python scripts/visual_kit.py prompt-once <approved-character-image> --brief <brief-path>
 ```
 
-两条命令都会先验证视觉简报。输出的 `image_references` 按顺序列出角色参考图和其它资料；用户提供完整 `prompt_text` 时原样输出，默认文章封面读取正式封面模板，其它旧简报没有 `prompt_text` 时才由当前内容材料、必要比例、结果类型和图片职责形成简短兼容提示词。普通衍生图不再附加完整角色档案。`prompt-once` 不创建角色包或正式衍生归档。
+两条命令都会先验证视觉简报。输出的 `image_references` 按顺序列出角色参考图、品牌默认标记和其它资料；用户提供完整 `prompt_text` 时文字原样输出，默认文章封面读取正式封面模板，品牌编辑视觉读取 `generation_text`，其它旧简报没有 `prompt_text` 时才由当前内容材料、必要比例、结果类型和图片职责形成简短兼容提示词。普通衍生图不附加完整角色档案，两条命令都只返回当前生成需要的输入，不创建静态成图档案。
 
 角色身份和当前画面职责分别处理：
 
-- 主参考图决定轮廓、比例、脸部、颜色落点、服装连接、材质和标志物；档案留在维护与归档侧。
+- 主参考图决定轮廓、比例、脸部、颜色落点、服装连接、材质和标志物；角色档案只用于维护角色身份。
 - 用户提示词和硬要求决定必须固定的动作、场景、画幅、文字或其它内容；未固定部分由图像 AI 决定。
 - 当前图片中偶然出现的衣饰、纹样和配件不写回角色档案。
 - 衍生图不会成为新的角色参考图。用户明确要改变身份特征时返回角色修改流程，升版后再重新生成衍生图。
 
-每张图片输入只承担一种明确职责：角色主参考图负责身份，用户当前提供的 logo 负责准确品牌标记，构图或界面资料负责当前页面关系。内置视觉语言可以提供用户明确选择的风格名称或实际参考图，但完整 JSON、维护说明、分析过程、备选方向、QA 检查表和通用负面词清单都不进入提示词。
+每张图片输入只承担一种明确职责：角色主参考图负责身份，品牌默认或用户当前提供的 logo 负责准确标记，构图或界面资料负责当前页面关系。内置品牌视觉语言只把已经蒸馏完成的 `generation_text` 送进提示词；完整 JSON、来源案例、维护说明、分析过程、备选方向、QA 检查表和通用负面词清单都不进入日常生图输入。
 
 ### 极简手绘内容视觉
 
@@ -65,9 +65,9 @@ python scripts/visual_kit.py style-references minimal-handdrawn
 python scripts/visual_kit.py style-profile okx-editorial
 ```
 
-把视觉简报的 `visual_language` 设为 `okx-editorial`。命令返回 `style-profile.json` 的已验证内容、绝对路径和 SHA-256；脚本在生成提示词时读取同一文件，并在归档时保存本次 JSON 快照与哈希。七张来源案例和透明 Logo 留在资源目录中用于追溯提炼依据，不参与默认生成。
+把视觉简报的 `visual_language` 设为 `okx-editorial`。维护命令返回 `style-profile.json` 的已验证内容、绝对路径和 SHA-256；日常生成只读取同一文件中的 `generation_text`。七张来源案例只用于追溯风格提炼依据，不参与默认生成。
 
-正常 OKX 风格生成的 `image_references` 只有角色主图和当前任务确实需要的资料。用户明确要求精确 OKX Logo 时，再把已保存的透明 Logo 作为当前品牌素材加入简报；普通风格请求不自动加载它。JSON 留在维护侧用于说明来源，不整体复制进提示词；提示词只保留用户选择的“OKX Editorial”风格名称。
+正常 OKX 风格生成会自动把已保存的白色透明 OKX 标记放在角色主图之后，再接当前任务确实需要的资料。提示词写明它的品牌职责并要求保持比例和结构，不重画。JSON 的详细配色、场景家族与检查项留在维护侧，不整体复制进提示词；来源案例也不传给图像模型。
 
 ### Binance Editorial 品牌编辑视觉
 
@@ -77,9 +77,9 @@ python scripts/visual_kit.py style-profile okx-editorial
 python scripts/visual_kit.py style-profile binance-editorial
 ```
 
-把视觉简报的 `visual_language` 设为 `binance-editorial`。它与 OKX Editorial 使用同一套 prompt-profile 合同：命令返回已验证的 JSON、绝对路径和 SHA-256；生成时读取同一文件，归档时保存当次快照与哈希。五张来源案例只保留为提炼依据，不参与日常生成，也不向当前内容补充旧活动文案、奖励、人物、界面、商品、二维码或构图。
+把视觉简报的 `visual_language` 设为 `binance-editorial`。它与 OKX Editorial 使用同一套 prompt-profile 合同：维护命令返回已验证的 JSON、绝对路径和 SHA-256；日常生成只读取同一文件中的 `generation_text`。五张来源案例只保留为提炼依据，不参与日常生成，也不向当前内容补充旧活动文案、奖励、人物、界面、商品、二维码或构图。
 
-默认图片输入只有角色主图和当前任务资料；用户明确要求精确 Binance 标记时，才按底色加入资源目录中的黄色或黑色透明标记。JSON 留在维护侧用于说明来源，不整体复制进提示词；提示词只保留用户选择的“Binance Editorial”风格名称，具体画布和场景由图像 AI 决定。
+正常 Binance 风格生成会自动把黄色、黑色两份透明标记放在角色主图之后，再接当前任务资料。提示词要求图像 AI 根据自己最终选择的深色或黄／浅色背景二选一使用，保持比例和结构，不重画。JSON 只把 `generation_text` 编译进提示词，详细规则留在维护侧；具体画布、重点和版式仍由图像 AI 根据完整内容决定。
 
 ## 3. 头像、主页横幅和资料卡
 
@@ -101,7 +101,7 @@ python scripts/visual_kit.py style-profile binance-editorial
 
 完整角色档案只用于保持身份，不把三视图、配色表、结构清单或生图说明画进资料卡。
 
-用户说“主页套图”时，默认交付一张头像和一张主页横幅；明确要求资料卡时再加入资料卡。三张图分别建立简报、生成和归档，共享同一角色版本和品牌线索。
+用户说“主页套图”时，默认交付一张头像和一张主页横幅；明确要求资料卡时再加入资料卡。每张图分别建立简报、生成并直接交付，共享同一角色版本和品牌线索，但不写入角色库。
 
 ## 4. 文章封面
 
@@ -134,71 +134,12 @@ python scripts/visual_kit.py plan-draft <plan-path> --set-id <slug> --language <
 python scripts/visual_kit.py materialize-plan <plan-path> --output <ordered-brief-directory>
 ```
 
-脚本验证原文片段与顺序，为每个锚点生成现有 `article-illustration` 简报。按返回顺序逐张运行 `prompt`，先把本批所有完整提示词和图片输入展示给用户；用户确认后下一轮才逐张原样生图并 `finalize`。每张只生成一版并遵守同一单图合同，不建立第二套文章插图提示格式。全部归档后运行：
+脚本验证原文片段与顺序，为每个锚点生成现有 `article-illustration` 简报。按返回顺序逐张运行 `prompt`，先把本批所有完整提示词和图片输入展示给用户；用户确认后下一轮才逐张原样生成。把结果按正文顺序展示并交付，每张默认只生成一版并遵守同一单图合同，不建立第二套文章插图格式，也不再建立集合归档或集合检查。
 
-```text
-python scripts/visual_kit.py finalize-set <character-kit> --plan <plan-path>
-python scripts/visual_kit.py check-set <article-set-folder> --kit <character-kit>
-```
+## 8. 生成、交付与修改
 
-文章配图组记录正文顺序、插入位置、原文锚点和它实际消费的每一个 visual revision。任何单图缺失、未归档，或者与计划登记的 `visual_id` 不一致时，整组不能归档完成。
+衍生视觉默认只生成一版。生图前先展示实际完整提示词和图片输入，等待用户确认；确认后不得改写。图片生成后直接展示并交付，然后停止，不归档到角色库，不保存输入副本、快照、哈希、视觉记录或静态图片版本，也不因为 Agent 自己的文字、构图或审美判断而自动重生、生成多个结果或替用户选择。
 
-## 8. 第一版交付与用户要求的修订
+用户没有指定保存位置时，交付图像入口返回的输出；用户指定位置时，只把最终图片复制到那个位置。交付位置不能默认落在 `<character-kit>/derivatives/`，也不能因为图片使用了角色主参考图就变成角色档案的一部分。
 
-衍生视觉默认只生成一版。生图前先展示实际完整提示词和图片输入，等待用户确认；确认后不得改写。图片正常生成后直接归档并交给用户，不先进行审美筛选，不因为 Agent 发现文字、构图、角色动作或细节问题而修改简报、自动重生、生成多个候选或替用户选择。用户明确要求检查、修正、比较或授权 Agent 代选时，新的提示词仍须先展示并重新确认。
-
-用户明确要求检查、修正、比较或授权 Agent 代选后，才实际打开当前成图，只对照原始提示词、输入图片、内容真源和用户点名的问题说明具体差异。用户确认需要修改后，按实际问题选择第 9 节的修订范围；不把一次成品瑕疵升级成以后每张图都要经过的自动检查和重试。需要改变事实、叙事重点或角色固定特征时，返回 `SKILL.md` 的主流程处理取舍。
-
-## 9. 已归档视觉的无损修订
-
-用户要求“删标题，其它不变”“改错字”“调整动作”或“换重点”时，先读取 visual 根目录的 `current.json`、当前 revision 的 `visual-record.json`、视觉简报和最终图片，再选择唯一修订范围：
-
-- `local-rendering`：删除或替换局部文字、修明显渲染错误、轻调局部位置；上一版成图是编辑底图，未点名内容保持不变。
-- `content-structure`：核心重点、动作因果、构图结构或文字层级发生变化；从内容真源和角色真源按新简报重做，上一版只校准连续性。
-- `character-revision`：固定角色特征已正式升版；新主参考图是身份真源，旧成图只保留当前视觉的用途和节奏。
-
-先修改同一个 visual-id 的简报，再运行：
-
-```text
-python scripts/visual_kit.py revision-prompt <character-kit> --visual <visual-folder> --brief <revised-brief> --change-scope <scope> --note <exact-change>
-```
-
-先把返回的完整 `prompt` 和有序 `image_references` 展示给用户并停止；确认后下一轮才原样编辑或重生，其中第二张输入固定为上一版成图。检查通过后运行：
-
-```text
-python scripts/visual_kit.py revise <character-kit> --visual <visual-folder> --brief <revised-brief> --image <approved-image> --change-scope <scope> --note <exact-change>
-python scripts/visual_kit.py check <visual-folder> --kit <character-kit>
-```
-
-每次修订创建 `r002`、`r003` 等新目录，旧 revision 与生成输入继续保留。不要覆盖旧图，也不要另建一个失去父版本关系的新 visual-id。角色未升版时不能使用 `character-revision`，角色已经改变时也不能把它伪装成局部修图。
-
-旧版平铺目录不属于正常运行合同。发现 `<visual-folder>/visual-record.json` 而没有 `current.json` 时，只能显式运行一次：
-
-```text
-python scripts/visual_kit.py migrate-visual <visual-folder> --kit <character-kit>
-```
-
-迁移把旧结果变成 `r001`，并把原平铺目录移动到同级 `.ip-studio-legacy-archives/` 保留。迁移完成后，`prompt`、`revise`、`check` 和文章配图组只消费版本化结构，不维护两套读取逻辑。
-
-## 10. 归档与停止
-
-第一张结果生成后直接运行：
-
-```text
-python scripts/visual_kit.py finalize <character-kit> --brief <brief-path> --image <approved-image>
-python scripts/visual_kit.py check <visual-folder> --kit <character-kit>
-```
-
-正式产物写入：
-
-```text
-<character-kit>/derivatives/<kind>/<visual-id>/
-├── current.json
-└── revisions/
-    ├── r001/
-    └── r002/
-```
-
-每个 revision 保存最终图片、视觉简报、当次角色档案快照、完整生图输入、输入资料副本、父版本与变更范围；`current.json` 只指向当前 revision。角色包当前身份文件及历史版本保持不变。只有用户明确要求另做、检查或修订时才产生新的候选或 revision。
-
-归档后重新读取当前 revision 的 `visual-record.json`，把登记的最终图片直接展示给用户，再说明它表达的核心关系、visual revision、角色版本和绝对保存路径；文章配图组按正文顺序展示。满足当前请求后停止，不自动检查、重生、扩展成其它比例或其它媒体。
+用户要求“删标题，其它不变”“改错字”“调整动作”或“换重点”时，直接把上一张成图作为编辑输入，结合用户点名的修改形成新的完整提示词和有序图片输入。先展示并等待确认，确认后直接编辑或重生并交付；不创建 `r001`、`r002`、父版本关系、迁移记录或另一套 visual 合同。需要改变角色固定身份时，返回角色修改流程，使用升版后的主参考图重新生成当前图片。
